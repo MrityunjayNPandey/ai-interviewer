@@ -1,3 +1,4 @@
+import { Button, Stack } from "@mui/material";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -212,23 +213,18 @@ function Interview() {
                 onChange={(e) => setAnswer(e.target.value)}
               />
               <br />
-              <button
-                style={{
-                  backgroundColor: "#007bff",
-                  color: "white",
-                  padding: "0.5rem 1rem",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontSize: "1rem",
-                  marginTop: "0.5rem",
-                  width: "100%",
-                }}
-                onClick={handleAnswerSubmit}
-                disabled={answerMutation.isPending}
-              >
-                {answerMutation.isPending ? "Submitting..." : "Submit Answer"}
-              </button>
+              <Stack direction={"row-reverse"}>
+                <Button
+                  sx={{
+                    marginTop: "1rem",
+                  }}
+                  variant="contained"
+                  onClick={handleAnswerSubmit}
+                  disabled={answerMutation.isPending}
+                >
+                  Submit Answer
+                </Button>
+              </Stack>
             </div>
           )}
 
@@ -240,7 +236,7 @@ function Interview() {
             }}
           >
             {showNextQuestionButton && (
-              <button
+              <Button
                 onClick={handleNextQuestion}
                 style={{
                   backgroundColor: "#28a745",
@@ -253,13 +249,14 @@ function Interview() {
                   flex: 1,
                   marginRight: "0.5rem",
                 }}
+                disabled={isLoading}
               >
                 Next Question
-              </button>
+              </Button>
             )}
 
             {showEndInterviewButton && (
-              <button
+              <Button
                 onClick={handleEndInterview}
                 style={{
                   backgroundColor: "#dc3545",
@@ -274,7 +271,7 @@ function Interview() {
                 disabled={endInterviewMutation.isPending}
               >
                 End Interview
-              </button>
+              </Button>
             )}
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { Button, Stack } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
@@ -194,30 +195,15 @@ function DetailsForm() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          style={{
-            width: "100%",
-            padding: "12px",
-            backgroundColor: "#3498db",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            fontSize: "1em",
-            fontWeight: "600",
-            cursor: "pointer",
-            transition: "background-color 0.3s",
-          }}
-          onMouseOver={(e) =>
-            (e.currentTarget.style.backgroundColor = "#2980b9")
-          }
-          onMouseOut={(e) =>
-            (e.currentTarget.style.backgroundColor = "#3498db")
-          }
-        >
-          {mutation.isPending ? "Submitting..." : "Start Interview"}
-        </button>
+        <Stack direction={"row-reverse"}>
+          <Button
+            type="submit"
+            disabled={mutation.isPending}
+            variant="contained"
+          >
+            Start Interview
+          </Button>
+        </Stack>
       </form>
     </div>
   );
