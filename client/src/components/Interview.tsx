@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../App";
 
 interface SubmitAnswerPayload {
@@ -67,6 +67,7 @@ const endInterviewFn = async (email: string) => {
 
 function Interview() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [interviewerMessage, setInterviewerMessage] = useState("");
   const [answer, setAnswer] = useState("");
   const [showAnswerBox, setShowAnswerBox] = useState(false);
@@ -82,12 +83,17 @@ function Interview() {
   const { isLoading, refetch: fetchQuestion } = useQuery({
     queryKey: ["question"],
     queryFn: () =>
-      getQuestionFn(email).then((data) => {
-        setInterviewerMessage(data.question);
-        setShowAnswerBox(true);
-        setShowNextQuestionButton(false);
-        setShowEndInterviewButton(false);
-      }),
+      getQuestionFn(email)
+        .then((data) => {
+          setInterviewerMessage(data.question);
+          setShowAnswerBox(true);
+          setShowNextQuestionButton(false);
+          setShowEndInterviewButton(false);
+        })
+        .catch((error) => {
+          console.error("Error fetching question:", error);
+          navigate("/");
+        }),
     enabled: true,
   });
 
@@ -102,6 +108,7 @@ function Interview() {
     },
     onError: (error: Error) => {
       alert(`Error submitting answer: ${error.message}`);
+      navigate("/");
     },
   });
 
@@ -115,6 +122,7 @@ function Interview() {
     },
     onError: (error: Error) => {
       alert(`Error ending interview: ${error.message}`);
+      navigate("/");
     },
   });
 
@@ -131,32 +139,92 @@ function Interview() {
   };
 
   const handleEndInterview = () => {
+    console.log("🚀 ~ handleEndInterview ~ handleEndInterview:");
     endInterviewMutation.mutate();
   };
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "600px", margin: "auto" }}>
-      <h2>Interview</h2>
+    <div
+      style={{
+        padding: "2rem",
+        maxWidth: "800px",
+        margin: "auto",
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+      }}
+    >
+      <h2
+        style={{
+          color: "#2c3e50",
+          textAlign: "center",
+          marginBottom: "2rem",
+          fontSize: "2rem",
+        }}
+      >
+        Interview Session
+      </h2>
 
       {isLoading ? (
-        <p>Loading question...</p>
+        <div style={{ textAlign: "center", margin: "2rem 0" }}>
+          <p style={{ fontSize: "1.2rem" }}>Loading question...</p>
+        </div>
       ) : (
-        <div>
-          <p>
-            <strong>Interviewer:</strong> {interviewerMessage}
-          </p>
+        <div
+          style={{
+            backgroundColor: "#f8f9fa",
+            padding: "1.5rem",
+            borderRadius: "8px",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#e9ecef",
+              padding: "1rem",
+              borderRadius: "6px",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: "1.1rem",
+                lineHeight: "1.5",
+              }}
+            >
+              <strong style={{ color: "#2c3e50" }}>Interviewer:</strong>{" "}
+              {interviewerMessage}
+            </p>
+          </div>
 
           {showAnswerBox && (
             <div style={{ marginTop: "1rem" }}>
               <textarea
-                rows={5}
-                cols={60}
+                style={{
+                  width: "100%",
+                  padding: "0.8rem",
+                  fontSize: "1rem",
+                  borderRadius: "4px",
+                  border: "1px solid #ced4da",
+                  minHeight: "120px",
+                  boxSizing: "border-box",
+                }}
                 placeholder="Type your answer here..."
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
               />
               <br />
               <button
+                style={{
+                  backgroundColor: "#007bff",
+                  color: "white",
+                  padding: "0.5rem 1rem",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  marginTop: "0.5rem",
+                  width: "100%",
+                }}
                 onClick={handleAnswerSubmit}
                 disabled={answerMutation.isPending}
               >
@@ -165,25 +233,51 @@ function Interview() {
             </div>
           )}
 
-          {showNextQuestionButton && (
-            <button onClick={handleNextQuestion} style={{ marginTop: "1rem" }}>
-              Next Question
-            </button>
-          )}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginTop: "1rem",
+            }}
+          >
+            {showNextQuestionButton && (
+              <button
+                onClick={handleNextQuestion}
+                style={{
+                  backgroundColor: "#28a745",
+                  color: "white",
+                  padding: "0.5rem 1rem",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  flex: 1,
+                  marginRight: "0.5rem",
+                }}
+              >
+                Next Question
+              </button>
+            )}
 
-          {showEndInterviewButton && (
-            <button
-              onClick={handleEndInterview}
-              style={{
-                marginTop: "1rem",
-                marginLeft: "1rem",
-                backgroundColor: "#dc3545",
-                color: "white",
-              }}
-            >
-              End Interview
-            </button>
-          )}
+            {showEndInterviewButton && (
+              <button
+                onClick={handleEndInterview}
+                style={{
+                  backgroundColor: "#dc3545",
+                  color: "white",
+                  padding: "0.5rem 1rem",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  flex: 1,
+                }}
+                disabled={endInterviewMutation.isPending}
+              >
+                End Interview
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
