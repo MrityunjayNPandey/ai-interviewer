@@ -9,8 +9,11 @@ import {
   getGptQuestion,
 } from "./services/gpt-service";
 
+const cors = require("cors"); // Import the cors middleware
+
 const app = express();
 app.use(bodyParser.json());
+app.use(cors());
 
 export type gptContext = {
   role: string;
