@@ -167,6 +167,10 @@ app.post("/endInterview", async (req, res) => {
   res.json({ feedback });
 });
 
+app.get("/", async (req, res) => {
+  res.send("Express on Vercel");
+});
+
 const PORT = process.env.PORT || 8080;
 connectToDatabase().then(() => {
   app.listen(PORT, () => {
