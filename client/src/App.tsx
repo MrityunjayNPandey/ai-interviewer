@@ -9,14 +9,12 @@ export const API_BASE_URL = import.meta.env.VITE_SERVER_URL;
 function App() {
   return (
     <>
-      <h1>AI Interviewer</h1>
-      <div className="card">
-        <Routes>
-          <Route path="/" element={<EmailForm />} />
-          <Route path="/details" element={<DetailsForm />} />
-          <Route path="/interview" element={<Interview />} />
-        </Routes>
-      </div>
+      <h1 style={{ color: "#007bff" }}>AI Interviewer</h1>
+      <Routes>
+        <Route path="/" element={<EmailForm />} />
+        <Route path="/details" element={<DetailsForm />} />
+        <Route path="/interview" element={<Interview />} />
+      </Routes>
     </>
   );
 }

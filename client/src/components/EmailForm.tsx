@@ -34,6 +34,7 @@ function EmailForm() {
   const mutation = useMutation({
     mutationFn: startInterviewMutationFn,
     onSuccess: (data) => {
+      console.log("🚀 ~ EmailForm ~ data:", data);
       if (data.createInterview) {
         navigate("/details", { state: { email } });
       } else {
@@ -58,34 +59,84 @@ function EmailForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Enter Your Email</h2>
-      {formError && <p style={{ color: "orange" }}>{formError}</p>}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "20vh",
+        minWidth: "100vh",
+        textAlign: "center",
+        padding: "20px",
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "flex",
+          gap: "15px",
+          width: "80%",
+          padding: "20px",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+        }}
+      >
+        {formError && (
+          <p style={{ color: "orange", marginBottom: "10px" }}>{formError}</p>
+        )}
 
-      {mutation.isError && (
-        <p style={{ color: "red" }}>
-          Error:{" "}
-          {mutation.error instanceof Error
-            ? mutation.error.message
-            : "An unknown error occurred"}
-        </p>
-      )}
+        {mutation.isError && (
+          <p style={{ color: "red", marginBottom: "10px" }}>
+            Error:{" "}
+            {mutation.error instanceof Error
+              ? mutation.error.message
+              : "An unknown error occurred"}
+          </p>
+        )}
 
-      <div>
-        <label htmlFor="email">Email:</label>
-        <input
-          type="email"
-          id="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
+        <div style={{ width: "100%" }}>
+          <input
+            type="email"
+            id="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={mutation.isPending}
+            placeholder="Enter your email"
+            style={{
+              width: "calc(100% - 20px)",
+              padding: "10px",
+              fontSize: "1.2em",
+              borderRadius: "5px",
+              border: "1px solid #ddd",
+              boxSizing: "border-box",
+              backgroundColor: "#f9f9f9",
+            }}
+          />
+        </div>
+        <button
+          type="submit"
           disabled={mutation.isPending}
-        />
-      </div>
-      <button type="submit" disabled={mutation.isPending}>
-        {mutation.isPending ? "Starting..." : "Next"}
-      </button>
-    </form>
+          style={{
+            padding: "10px 20px",
+            fontSize: "1.2em",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+            transition: "background-color 0.3s ease",
+          }}
+          onMouseOver={(e) =>
+            (e.currentTarget.style.backgroundColor = "#0056b3")
+          }
+          onMouseOut={(e) =>
+            (e.currentTarget.style.backgroundColor = "#007bff")
+          }
+        >
+          {mutation.isPending ? "Starting..." : "Next"}
+        </button>
+      </form>
+    </div>
   );
 }
 

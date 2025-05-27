@@ -65,7 +65,7 @@ app.post("/startInterview", async (req, res) => {
 
   cacheMap.set(emailId, { interview, gptContext });
 
-  res.json({ createInterview });
+  res.json({ createInterview: gptContext.length === 1 });
 });
 
 app.post(

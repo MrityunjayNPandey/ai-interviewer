@@ -1,97 +1,34 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-  background-color: #2f2f2f; /* Slightly different background for the card */
-  border-radius: 8px;
-  margin-top: 20px;
-}
-
-form div {
-  margin-bottom: 1rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  text-align: left;
-}
-
-input[type="email"],
-textarea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
   width: 100%;
-  padding: 0.5em;
-  margin-bottom: 1em;
-  border-radius: 4px;
-  border: 1px solid #555;
-  background-color: #3f3f3f;
-  color: #fff;
-  box-sizing: border-box; /* Ensures padding doesn't add to width */
 }
 
 button {
-  margin-top: 10px;
-}
-
-.chat-log {
-  height: 300px;
-  overflow-y: auto;
-  border: 1px solid #555;
-  padding: 1em;
-  margin-bottom: 1em;
-  text-align: left;
-  background-color: #3a3a3a;
+  padding: 10px 15px;
+  background-color: #007bff;
+  color: white;
+  border: none;
   border-radius: 4px;
+  cursor: pointer;
+  font-size: 1em;
 }
 
-.message {
-  margin-bottom: 0.5em;
-  padding: 0.5em;
-  border-radius: 4px;
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
 }
 
-.message.user {
-  background-color: #4a5c70; /* Different color for user messages */
-  text-align: right;
-}
-
-.message.ai {
-  background-color: #5a5a5a; /* Different color for AI messages */
-}
-
-.read-the-docs {
-  color: #888;
+button:hover:not(:disabled) {
+  background-color: #0056b3;
 }
