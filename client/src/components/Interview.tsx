@@ -139,7 +139,6 @@ function Interview() {
   };
 
   const handleEndInterview = () => {
-    console.log("🚀 ~ handleEndInterview ~ handleEndInterview:");
     endInterviewMutation.mutate();
   };
 
