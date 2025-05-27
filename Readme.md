@@ -1,47 +1,32 @@
-#AI Interviewer
+# AI Interviewer Platform
 
-## Server takes in the resume, with job description (text format), feeds it to the AI context and asks the questions according to the resume, JD and responses of the candidate.
+## Overview
 
-## The transcripts should be stored in the database.
+A system that conducts AI-powered interviews by analyzing resumes and job descriptions, then generating relevant questions and feedback.
 
-## After the interview ends, a feedback should be generated.
+## Key Features
 
-# Functionality:
+- Resume and job description analysis
+- Context-aware question generation (adaptability based on previous answers)
+- Interview session management
+- Automated feedback generation
+- Transcript storage in database
 
-1. User is identified by the email address.
-2. If the email is present in the cache-map, it fetches that, otherwise it fetches the context from the database.
-3. If the latest interview is incomplete, it resumes the interview. Otherwise, it starts a new interview.
-4. Creating a web socket connection, would be optimal, however that would be complicated to implement.
+## Technical Architecture
 
-# Schema:
+- **Client**: React/Vite frontend
+- **Server**: Node.js backend with MongoDB
+- **AI Integration**: GPT-based question generation
 
-```
-Interview:
+## Getting Started
 
-- _id
-- emailId
-- status
-- feedback
-
-InterviewContexts:
-
-- _id
-- interviewId
-- context
-- sequenceId
-- role
+1. Clone the repository
+2. Install dependencies for both client and server
+3. Configure MongoDB connection
+4. Set up API keys for AI services
+5. Run development servers
 
 ```
-
-APIs:
-
-1. POST /startInterview: -- emailId -- returns true if no prev interview exists or prev interview was completed, otherwise false
-2. POST /submitJdAndResume: -- emailId, jd, resume -- skipped if last interview was incomplete
-3. POST /getQuestion: -- emailId -- if already present in cache/database, it returns the question, otherwise, asks gpt to generate the question
-4. POST /submitAnswer: -- emailId, answer
-5. POST /endInterview: -- emailId -- returns the feedback
-
-Current Assumptions:
-
-1. No external person is trying to ruin the interview, hence no authentication is required.
-2. The interview is not timed, hence no timeout is required.
+cd client && npm install && npm run dev
+cd ../server && npm install && npm start
+```
