@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "ts-node server.ts"
+    "start": "ts-node index.ts",
+    "build": "tsc"
   },
   "author": "",
   "license": "ISC",
@@ -14,7 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "mongoose": "^8.15.1",
+    "mongoose": "8.1.1",
     "openai": "^4.103.0",
     "typescript": "^5.8.3",
     "zod": "^3.25.30"

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
+import { gptContext } from "..";
 import interviewContextModel from "../db/models/interviewContextModel";
 import interviewModel from "../db/models/interviewModel";
-import { gptContext } from "../server";
 
 export const getGPTContext = async (emailId: string) => {
   const interview = await interviewModel
