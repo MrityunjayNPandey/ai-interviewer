@@ -14,6 +14,18 @@ export const getGptQuestion = async (context: any) => {
   return response.choices[0]?.message?.content || "";
 };
 
+export const getGptAnswerFeedback = async (context: any) => {
+  const response = await openai.chat.completions.create({
+    model: "gemma2-9b-it",
+    messages: [
+      ...context,
+      { role: "user", content: "give me the feedback about my previous answer in not more than 50 words" },
+    ],
+    temperature: 0.7,
+  });
+  return response.choices[0]?.message?.content || "";
+};
+
 export const getGptInterviewFeedback = async (context: any) => {
   const response = await openai.chat.completions.create({
     model: "gemma2-9b-it",

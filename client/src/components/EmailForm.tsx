@@ -2,8 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL;
+import { API_BASE_URL } from "../App";
 
 const startInterviewMutationFn = async (email: string) => {
   const payload = { emailId: email };
@@ -36,9 +35,9 @@ function EmailForm() {
     mutationFn: startInterviewMutationFn,
     onSuccess: (data) => {
       if (data.createInterview) {
-        navigate("/details");
+        navigate("/details", { state: { email } });
       } else {
-        navigate("/interview");
+        navigate("/interview", { state: { email } });
       }
     },
     onError: (error) => {

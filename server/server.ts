@@ -5,6 +5,7 @@ import interviewContextModel from "./db/models/interviewContextModel";
 import interviewModel from "./db/models/interviewModel";
 import { connectToDatabase } from "./db/mongo-client";
 import {
+  getGptAnswerFeedback,
   getGptInterviewFeedback,
   getGptQuestion,
 } from "./services/gpt-service";
@@ -136,7 +137,7 @@ app.post("/submitAnswer", async (req, res) => {
   let { interview, gptContext } = cacheMap.get(emailId) ?? {};
   console.log("🚀 ~ app.post ~ gptContext:", gptContext);
 
-  if (!gptContext?.length || gptContext.length < 5) {
+  if (!gptContext?.length || gptContext.length < 4) {
     throw new Error("Invalid operation");
   }
 
@@ -145,22 +146,35 @@ app.post("/submitAnswer", async (req, res) => {
     content: answer,
   });
 
+  const answerFeedback = await getGptAnswerFeedback(gptContext);
+
+  gptContext?.push({
+    role: "assistant",
+    content: answerFeedback,
+  });
+
   await interviewContextModel.insertMany([
     {
       interviewId: interview?._id,
-      role: "user",
-      content: answer,
+      role: "assistant",
+      content: gptContext?.[gptContext.length - 1]?.content,
       sequenceId: gptContext.length - 1,
     },
     {
       interviewId: interview?._id,
-      role: "assistant",
+      role: "user",
       content: gptContext?.[gptContext.length - 2]?.content,
       sequenceId: gptContext.length - 2,
     },
+    {
+      interviewId: interview?._id,
+      role: "assistant",
+      content: gptContext?.[gptContext.length - 3]?.content,
+      sequenceId: gptContext.length - 3,
+    },
   ]);
 
-  res.json({ success: true });
+  res.json({ gptFeedback: answerFeedback });
 });
 
 app.post("/endInterview", async (req, res) => {
@@ -181,7 +195,7 @@ app.post("/endInterview", async (req, res) => {
 
   cacheMap.delete(emailId);
 
-  res.json({ success: true });
+  res.json({ feedback });
 });
 
 const PORT = process.env.PORT || 8080;
