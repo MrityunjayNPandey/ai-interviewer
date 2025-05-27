@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const uri: string = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/ai-interview";
+const uri: string = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/ai-interviewer";
 let connection: Connection;
 
 async function connectToDatabase(): Promise<void> {

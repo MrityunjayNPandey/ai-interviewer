@@ -4,16 +4,23 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "ts-node server.ts"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^2.2.0",
     "dotenv": "^16.5.0",
+    "express": "^5.1.0",
     "mongoose": "^8.15.1",
-    "typescript": "^5.8.3"
+    "openai": "^4.103.0",
+    "typescript": "^5.8.3",
+    "zod": "^3.25.30"
   },
   "devDependencies": {
-    "@types/node": "^22.15.21"
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.21",
+    "ts-node": "^10.9.2"
   }
 }

@@ -5,7 +5,7 @@ const InterviewContextSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     required: true,
   },
-  context: {
+  content: {
     type: String,
     required: true,
   },
@@ -19,4 +19,4 @@ const InterviewContextSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("KnowledgeBase", InterviewContextSchema);
+export default mongoose.model("InterviewContext", InterviewContextSchema);

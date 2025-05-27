@@ -19,4 +19,4 @@ const InterviewSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("HelpRequest", InterviewSchema);
+export default mongoose.model("Interview", InterviewSchema);
