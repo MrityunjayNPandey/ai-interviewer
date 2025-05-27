@@ -1,9 +1,9 @@
 import bodyParser from "body-parser";
 import express from "express";
 import { z } from "zod";
-import interviewContextModel from "./db/models/interviewContextModel";
 import interviewModel from "./db/models/interviewModel";
 import { connectToDatabase } from "./db/mongo-client";
+import { getGPTContext, insertGptContexts } from "./services/dbServices";
 import {
   getGptAnswerFeedback,
   getGptInterviewFeedback,
@@ -21,13 +21,6 @@ export type gptContext = {
   content: string;
 };
 
-type cache = {
-  interview: any;
-  gptContext: gptContext[];
-};
-
-const cacheMap = new Map<string, cache>();
-
 const emailInputSchema = z.object({
   emailId: z.string().email(),
 });
@@ -35,37 +28,25 @@ const emailInputSchema = z.object({
 app.post("/startInterview", async (req, res) => {
   const { emailId } = emailInputSchema.parse(req.body);
 
-  let interview = await interviewModel
-    .findOne({ emailId })
-    .sort({ createdAt: -1 });
-  let createInterview = !interview || interview.status === "completed";
+  const { interview: dbInterview } = await getGPTContext(emailId);
+  let createInterview = !dbInterview || dbInterview.status === "completed";
 
-  let gptContext: gptContext[] = [
-    {
-      role: "system",
-      content: `You are an Interviewer. You need to ask questions to interviewee based on the resume and JD. You have to ask questions only when the user says "generate a question". You'll have to give your honest feedback to the user after the interview, when the user says "give me the feedback of the interview", and that if he can be hired in or organization or not. As a reference, if 80% of questions are answered correctly, you can hire the interviewee. You'll have to give your feedback in 200 words.`,
-    },
-  ];
+  let interview = dbInterview;
 
   if (createInterview) {
+    let gptContext: gptContext[] = [
+      {
+        role: "system",
+        content: `You are an Interviewer. You need to ask questions to interviewee based on the resume and JD. You have to ask questions only when the user says "generate a question". You'll have to give your honest feedback to the user after the interview, when the user says "give me the feedback of the interview", and that if he can be hired in or organization or not. As a reference, if 80% of questions are answered correctly, you can hire the interviewee. You'll have to give your feedback in 200 words.`,
+      },
+    ];
     interview = await interviewModel.create({
       emailId,
     });
-  } else {
-    const interviewContexts = await interviewContextModel
-      .find({ interviewId: interview?._id })
-      .sort({ sequenceId: 1 });
-    interviewContexts.forEach((context) => {
-      gptContext.push({
-        role: context.role,
-        content: context.content,
-      });
-    });
+    await insertGptContexts(gptContext, interview!._id);
   }
 
-  cacheMap.set(emailId, { interview, gptContext });
-
-  res.json({ createInterview: gptContext.length === 1 });
+  res.json({ createInterview });
 });
 
 app.post(
@@ -79,31 +60,24 @@ app.post(
 
     const { emailId, jd, resume } = submitJdResumeSchema.parse(req.body);
 
-    let { interview, gptContext } = cacheMap.get(emailId) ?? {};
+    let { interview, gptContext } = await getGPTContext(emailId);
 
     if (!gptContext || gptContext.length !== 1) {
       throw new Error("Invalid operation");
     }
 
-    gptContext.push({
-      role: "user",
-      content: `resume: ${resume}`,
-    });
-
-    gptContext.push({
-      role: "user",
-      content: `JD: ${jd}`,
-    });
-
-    await interviewContextModel.insertMany(
-      gptContext.map((context, index) => {
-        return {
-          interviewId: interview?._id,
-          content: context.content,
-          sequenceId: index,
-          role: context.role,
-        };
-      })
+    await insertGptContexts(
+      [
+        {
+          role: "user",
+          content: `resume: ${resume}`,
+        },
+        {
+          role: "user",
+          content: `JD: ${jd}`,
+        },
+      ],
+      interview!._id
     );
 
     res.json({ success: true });
@@ -112,19 +86,29 @@ app.post(
 
 app.post("/getQuestion", async (req, res) => {
   const { emailId } = emailInputSchema.parse(req.body);
-  let { gptContext } = cacheMap.get(emailId) ?? {};
-  console.log("🚀 ~ app.post ~ gptContext:", gptContext);
+  let { interview, gptContext } = await getGPTContext(emailId);
 
   if (!gptContext?.length || gptContext.length < 3) {
     throw new Error("Invalid operation");
   }
 
+  if (gptContext[gptContext.length - 1]?.role === "assistant") {
+    res.json({ question: gptContext[gptContext.length - 1]?.content });
+    return;
+  }
+
   const question = await getGptQuestion(gptContext);
 
-  gptContext?.push({
-    role: "assistant",
-    content: question,
-  });
+  await insertGptContexts(
+    [
+      {
+        role: "assistant",
+        content: question,
+      },
+    ],
+    interview!._id
+  );
+
   res.json({ question });
 });
 
@@ -134,45 +118,32 @@ app.post("/submitAnswer", async (req, res) => {
     answer: z.string().min(1),
   });
   const { emailId, answer } = emailAndAnswerInputSchema.parse(req.body);
-  let { interview, gptContext } = cacheMap.get(emailId) ?? {};
-  console.log("🚀 ~ app.post ~ gptContext:", gptContext);
+  let { interview, gptContext } = await getGPTContext(emailId);
 
   if (!gptContext?.length || gptContext.length < 4) {
     throw new Error("Invalid operation");
   }
 
-  gptContext?.push({
+  if (gptContext[gptContext.length - 1]?.role === "user") {
+    throw new Error("Invalid operation");
+  }
+
+  await insertGptContexts(
+    [
+      {
+        role: "user",
+        content: answer,
+      },
+    ],
+    interview!._id
+  );
+
+  gptContext.push({
     role: "user",
     content: answer,
   });
 
   const answerFeedback = await getGptAnswerFeedback(gptContext);
-
-  gptContext?.push({
-    role: "assistant",
-    content: answerFeedback,
-  });
-
-  await interviewContextModel.insertMany([
-    {
-      interviewId: interview?._id,
-      role: "assistant",
-      content: gptContext?.[gptContext.length - 1]?.content,
-      sequenceId: gptContext.length - 1,
-    },
-    {
-      interviewId: interview?._id,
-      role: "user",
-      content: gptContext?.[gptContext.length - 2]?.content,
-      sequenceId: gptContext.length - 2,
-    },
-    {
-      interviewId: interview?._id,
-      role: "assistant",
-      content: gptContext?.[gptContext.length - 3]?.content,
-      sequenceId: gptContext.length - 3,
-    },
-  ]);
 
   res.json({ gptFeedback: answerFeedback });
 });
@@ -180,7 +151,7 @@ app.post("/submitAnswer", async (req, res) => {
 app.post("/endInterview", async (req, res) => {
   const { emailId } = emailInputSchema.parse(req.body);
 
-  let { interview, gptContext } = cacheMap.get(emailId) ?? {};
+  let { interview, gptContext } = await getGPTContext(emailId);
 
   if (!gptContext?.length || gptContext.length < 5) {
     throw new Error("Invalid operation");
@@ -188,19 +159,15 @@ app.post("/endInterview", async (req, res) => {
 
   const feedback = await getGptInterviewFeedback(gptContext);
 
-  await interviewModel.findOneAndUpdate(interview._id, {
+  await interviewModel.findOneAndUpdate(interview!._id, {
     status: "completed",
     feedback,
   });
-
-  cacheMap.delete(emailId);
 
   res.json({ feedback });
 });
 
 const PORT = process.env.PORT || 8080;
 connectToDatabase().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  app.listen(PORT, () => {});
 });
