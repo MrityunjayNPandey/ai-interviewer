@@ -1,3 +1,4 @@
+import { Button } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
@@ -115,26 +116,13 @@ function EmailForm() {
             }}
           />
         </div>
-        <button
+        <Button
           type="submit"
           disabled={mutation.isPending}
-          style={{
-            padding: "10px 20px",
-            fontSize: "1.2em",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-            transition: "background-color 0.3s ease",
-          }}
-          onMouseOver={(e) =>
-            (e.currentTarget.style.backgroundColor = "#0056b3")
-          }
-          onMouseOut={(e) =>
-            (e.currentTarget.style.backgroundColor = "#007bff")
-          }
+          variant="contained"
         >
-          {mutation.isPending ? "Starting..." : "Next"}
-        </button>
+          Next
+        </Button>
       </form>
     </div>
   );

@@ -28,7 +28,7 @@ const emailInputSchema = z.object({
 app.post("/startInterview", async (req, res) => {
   const { emailId } = emailInputSchema.parse(req.body);
 
-  const { interview: dbInterview } = await getGPTContext(emailId);
+  const { interview: dbInterview, gptContext } = await getGPTContext(emailId);
   let createInterview = !dbInterview || dbInterview.status === "completed";
 
   let interview = dbInterview;
@@ -43,10 +43,11 @@ app.post("/startInterview", async (req, res) => {
     interview = await interviewModel.create({
       emailId,
     });
+
     await insertGptContexts(gptContext, interview!._id);
   }
 
-  res.json({ createInterview });
+  res.json({ createInterview: gptContext.length >= 3 ? false : true });
 });
 
 app.post(
