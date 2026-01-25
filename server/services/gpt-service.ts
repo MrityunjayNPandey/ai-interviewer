@@ -7,7 +7,7 @@ const openai = new OpenAI({
 
 export const getGptQuestion = async (context: any) => {
   const response = await openai.chat.completions.create({
-    model: "gemma2-9b-it",
+    model: process.env.AI_MODEL ?? '',
     messages: [...context, { role: "user", content: "generate a question" }],
     temperature: 0.7,
   });
@@ -16,7 +16,7 @@ export const getGptQuestion = async (context: any) => {
 
 export const getGptAnswerFeedback = async (context: any) => {
   const response = await openai.chat.completions.create({
-    model: "gemma2-9b-it",
+    model: process.env.AI_MODEL ?? '',
     messages: [
       ...context,
       { role: "user", content: "give me the feedback about my previous answer in not more than 50 words" },
@@ -28,7 +28,7 @@ export const getGptAnswerFeedback = async (context: any) => {
 
 export const getGptInterviewFeedback = async (context: any) => {
   const response = await openai.chat.completions.create({
-    model: "gemma2-9b-it",
+    model: process.env.AI_MODEL ?? '',
     messages: [
       ...context,
       { role: "user", content: "give me the feedback of the interview" },
