@@ -1,0 +1,297 @@
+import mongoose from "mongoose";
+import { AiUnavailableError, type AiClient } from "../ai/client";
+import type { ModelConfig, ModelRegistry } from "../ai/models";
+import { conflict, HttpError, notFound } from "../http/errors";
+import { InterviewModel, type InterviewDoc, type TurnDoc } from "./model";
+import { feedbackMessages, questionMessages, reportMessages, type PromptTurn } from "./prompts";
+import { reportSchema, type InterviewSummary, type InterviewView, type Report, type Setup } from "./schemas";
+
+/** A question still "generating" after this long is assumed abandoned (crashed or timed-out function). */
+const STALE_QUESTION_MS = 90_000;
+
+export type Deps = {
+  ai: AiClient;
+  registry: ModelRegistry;
+  now?: () => Date;
+};
+
+type OnDelta = (text: string) => void;
+
+const isAsked = (turn: TurnDoc): turn is TurnDoc & { question: string } => turn.question !== null;
+
+// ---- views ----
+
+export function toView(doc: InterviewDoc): InterviewView {
+  const hideFeedback = doc.setup.mode === "mock" && doc.status === "in_progress";
+  return {
+    id: doc._id.toString(),
+    status: doc.status,
+    createdAt: doc.createdAt.toISOString(),
+    completedAt: doc.completedAt?.toISOString() ?? null,
+    setup: doc.setup,
+    turns: doc.turns.filter(isAsked).map((turn, index) => ({
+      index,
+      question: turn.question,
+      answer: turn.answer ?? null,
+      feedback: hideFeedback ? null : (turn.feedback ?? null),
+      modelId: turn.modelId,
+    })),
+    report: doc.report,
+  };
+}
+
+export function toSummary(doc: InterviewDoc): InterviewSummary {
+  return {
+    id: doc._id.toString(),
+    status: doc.status,
+    createdAt: doc.createdAt.toISOString(),
+    roleTitle: doc.setup.requirements.title,
+    company: doc.setup.requirements.company,
+    interviewType: doc.setup.interviewType,
+    difficulty: doc.setup.difficulty,
+    length: doc.setup.length,
+    answeredCount: doc.turns.filter((turn) => turn.answer).length,
+    overallScore: doc.report?.overallScore ?? null,
+  };
+}
+
+// ---- service ----
+
+export function createInterviewService({ ai, registry, now = () => new Date() }: Deps) {
+  async function load(candidateId: string, id: string): Promise<InterviewDoc> {
+    if (!mongoose.isValidObjectId(id)) throw notFound();
+    const doc = await InterviewModel.findOne({ _id: id, candidateId }).lean<InterviewDoc>();
+    if (!doc) throw notFound();
+    return doc;
+  }
+
+  async function loadInProgress(candidateId: string, id: string) {
+    const doc = await load(candidateId, id);
+    if (doc.status !== "in_progress") throw conflict("This interview has already ended");
+    return doc;
+  }
+
+  function requireModel(modelId: string): ModelConfig {
+    const model = registry.find(modelId);
+    if (!model) throw new HttpError(400, "INVALID_REQUEST", "That model isn't available. Choose another one.");
+    return model;
+  }
+
+  /** The interview's current model; falls back to the default if its provider was unconfigured since. */
+  function modelFor(doc: InterviewDoc): ModelConfig {
+    const model = registry.find(doc.setup.modelId) ?? registry.defaultModel();
+    if (!model) throw new AiUnavailableError(doc.setup.modelId, "No AI provider is configured on the server.");
+    return model;
+  }
+
+  async function collect(stream: AsyncIterable<string>, onDelta?: OnDelta): Promise<string> {
+    let text = "";
+    for await (const delta of stream) {
+      text += delta;
+      onDelta?.(delta);
+    }
+    return text.trim();
+  }
+
+  async function generateFeedback(doc: InterviewDoc, index: number, onDelta?: OnDelta): Promise<InterviewDoc> {
+    const model = modelFor(doc);
+    const turns = doc.turns as PromptTurn[];
+    const turn = turns[index]!;
+    const feedback = await collect(ai.stream(model, feedbackMessages(doc.setup, turns.slice(0, index), turn)), onDelta);
+    if (!feedback) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
+
+    const updated = await InterviewModel.findOneAndUpdate(
+      { _id: doc._id },
+      { $set: { [`turns.${index}.feedback`]: feedback } },
+      { new: true }
+    ).lean<InterviewDoc>();
+    return updated ?? doc;
+  }
+
+  return {
+    async create(candidateId: string, setup: Setup): Promise<InterviewDoc> {
+      requireModel(setup.modelId);
+      const doc = await InterviewModel.create({ candidateId, setup });
+      return doc.toObject() as InterviewDoc;
+    },
+
+    async retake(candidateId: string, id: string): Promise<InterviewDoc> {
+      const { setup } = await load(candidateId, id);
+      const model = registry.find(setup.modelId) ?? registry.defaultModel();
+      if (!model) throw new AiUnavailableError(setup.modelId, "No AI provider is configured on the server.");
+      const doc = await InterviewModel.create({ candidateId, setup: { ...setup, modelId: model.id } });
+      return doc.toObject() as InterviewDoc;
+    },
+
+    get: load,
+
+    async list(candidateId: string): Promise<InterviewDoc[]> {
+      return InterviewModel.find({ candidateId }).sort({ createdAt: -1 }).limit(100).lean<InterviewDoc[]>();
+    },
+
+    async remove(candidateId: string, id: string): Promise<void> {
+      if (!mongoose.isValidObjectId(id)) throw notFound();
+      const { deletedCount } = await InterviewModel.deleteOne({ _id: id, candidateId });
+      if (!deletedCount) throw notFound();
+    },
+
+    async switchModel(candidateId: string, id: string, modelId: string): Promise<InterviewDoc> {
+      requireModel(modelId);
+      const doc = await InterviewModel.findOneAndUpdate(
+        { _id: id, candidateId, status: "in_progress" },
+        { $set: { "setup.modelId": modelId } },
+        { new: true }
+      ).lean<InterviewDoc>();
+      if (!doc) {
+        await load(candidateId, id); // 404 if it doesn't exist
+        throw conflict("This interview has already ended");
+      }
+      return doc;
+    },
+
+    /**
+     * Asks the next question, streaming it through `onDelta`. If a question is already waiting for
+     * an answer (e.g. after a page refresh), returns it without generating a new one.
+     */
+    async nextQuestion(candidateId: string, id: string, onDelta: OnDelta): Promise<InterviewDoc> {
+      const doc = await loadInProgress(candidateId, id);
+      const turns = doc.turns;
+      const last = turns.at(-1);
+      const current = now();
+      let index = turns.length;
+
+      if (last && isAsked(last) && !last.answer) return doc;
+
+      const model = modelFor(doc);
+
+      if (last && !isAsked(last)) {
+        // A placeholder: another request is generating, or one died mid-way and can be reclaimed.
+        if (current.getTime() - last.questionStartedAt.getTime() < STALE_QUESTION_MS) {
+          throw conflict("The next question is already being generated");
+        }
+        index = turns.length - 1;
+        const reclaimed = await InterviewModel.updateOne(
+          { _id: doc._id, [`turns.${index}.questionStartedAt`]: last.questionStartedAt },
+          { $set: { [`turns.${index}.questionStartedAt`]: current } }
+        );
+        if (!reclaimed.modifiedCount) throw conflict("The next question is already being generated");
+      } else {
+        if (turns.length >= doc.setup.length) throw conflict("All questions have been answered. End the interview to see your report.");
+        // Reserve the slot atomically so concurrent requests can't both add a question.
+        const reserved = await InterviewModel.updateOne(
+          { _id: doc._id, status: "in_progress", turns: { $size: turns.length } },
+          { $push: { turns: { question: null, questionStartedAt: current, modelId: model.id } } }
+        );
+        if (!reserved.modifiedCount) throw conflict("The next question is already being generated");
+      }
+
+      try {
+        const asked = turns.slice(0, index) as PromptTurn[];
+        const question = await collect(ai.stream(model, questionMessages(doc.setup, asked)), onDelta);
+        if (!question) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
+
+        const updated = await InterviewModel.findOneAndUpdate(
+          { _id: doc._id, [`turns.${index}.question`]: { $type: "null" } },
+          { $set: { [`turns.${index}.question`]: question, [`turns.${index}.modelId`]: model.id } },
+          { new: true }
+        ).lean<InterviewDoc>();
+        if (!updated) throw conflict("This interview changed while the question was being generated");
+        return updated;
+      } catch (error) {
+        // Release the slot so the candidate can retry, possibly with another model.
+        await InterviewModel.updateOne(
+          { _id: doc._id, turns: { $size: index + 1 }, [`turns.${index}.question`]: { $type: "null" } },
+          { $pop: { turns: 1 } }
+        );
+        throw error;
+      }
+    },
+
+    /**
+     * Saves the answer to the waiting question, then generates feedback. In coach mode the feedback
+     * streams through `onDelta`; in mock mode it is generated silently and a failure doesn't block the interview.
+     */
+    async answer(candidateId: string, id: string, answer: string, onDelta: OnDelta): Promise<InterviewDoc> {
+      const doc = await loadInProgress(candidateId, id);
+      const index = doc.turns.length - 1;
+      const last = doc.turns[index];
+      if (!last || !isAsked(last) || last.answer) throw conflict("There is no question waiting for an answer");
+
+      const updated = await InterviewModel.findOneAndUpdate(
+        {
+          _id: doc._id,
+          status: "in_progress",
+          // `$type`, not `null` / `$ne: null`: on an array path Mongo also reads `turns.N` as a field on every element,
+          // so plain null comparisons match (or fail) on those phantom values.
+          [`turns.${index}.answer`]: { $type: "null" },
+          [`turns.${index}.question`]: { $type: "string" },
+        },
+        { $set: { [`turns.${index}.answer`]: answer, [`turns.${index}.answeredAt`]: now() } },
+        { new: true }
+      ).lean<InterviewDoc>();
+      if (!updated) throw conflict("This question was already answered");
+
+      if (updated.setup.mode === "mock") {
+        try {
+          return await generateFeedback(updated, index);
+        } catch (error) {
+          if (error instanceof AiUnavailableError) return updated; // The report still covers this answer.
+          throw error;
+        }
+      }
+      return generateFeedback(updated, index, onDelta);
+    },
+
+    /** Retries feedback for the latest answer after a failure. */
+    async retryFeedback(candidateId: string, id: string, onDelta: OnDelta): Promise<InterviewDoc> {
+      const doc = await loadInProgress(candidateId, id);
+      const index = doc.turns.length - 1;
+      const last = doc.turns[index];
+      if (!last?.answer || last.feedback) throw conflict("There is no answer waiting for feedback");
+      return generateFeedback(doc, index, doc.setup.mode === "coach" ? onDelta : undefined);
+    },
+
+    /** Ends the interview and writes the report, covering only the answered questions. */
+    async end(candidateId: string, id: string): Promise<InterviewDoc> {
+      const doc = await load(candidateId, id);
+      if (doc.status === "completed") return doc;
+
+      const asked = doc.turns.filter(isAsked);
+      const answered = asked.filter((turn) => turn.answer);
+      if (!answered.length) throw conflict("Answer at least one question before ending the interview");
+
+      const model = modelFor(doc);
+      const report = normalizeReport(await ai.json(model, reportMessages(doc.setup, answered), reportSchema), answered.length);
+
+      const updated = await InterviewModel.findOneAndUpdate(
+        { _id: doc._id, status: "in_progress" },
+        {
+          $set: {
+            status: "completed",
+            completedAt: now(),
+            report: { ...report, modelId: model.id },
+            // Drop a question still being generated; it was never shown.
+            turns: asked,
+          },
+        },
+        { new: true }
+      ).lean<InterviewDoc>();
+      return updated ?? load(candidateId, id);
+    },
+  };
+}
+
+export type InterviewService = ReturnType<typeof createInterviewService>;
+
+/** Keeps one report entry per answered question, in order, and tidies scores. */
+export function normalizeReport(report: Report, answeredCount: number): Report {
+  const round = (score: number) => Math.round(Math.min(10, Math.max(0, score)) * 10) / 10;
+  const byIndex = new Map(report.questions.map((entry) => [entry.index, entry]));
+  const questions = Array.from({ length: answeredCount }, (_, index) => {
+    const entry = byIndex.get(index);
+    return entry
+      ? { ...entry, index, score: round(entry.score) }
+      : { index, score: 0, note: "No assessment was produced for this answer.", strongAnswer: "" };
+  });
+  return { ...report, overallScore: round(report.overallScore), questions };
+}

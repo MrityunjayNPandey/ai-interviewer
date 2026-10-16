@@ -32,4 +32,4 @@ pnpm dev                             # client on http://localhost:5173, API prox
 
 ## Deployment
 
-One Vercel project from the repo root: the client builds to static files and `api/index.ts` serves the Express API under `/api/*` (see `vercel.json`). Set `MONGODB_URI`, `GROQ_API_KEY` and optionally `AI_MODEL` in the Vercel project's environment variables.
+One Vercel project from the repo root: the client builds to static files and `api/index.ts` serves the Express API under `/api/*` (see `vercel.json`). Set `MONGODB_URI` and at least `GROQ_API_KEY` in the Vercel project's environment variables (see `server/.env.example` for the optional providers).
