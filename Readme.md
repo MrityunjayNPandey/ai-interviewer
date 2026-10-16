@@ -20,13 +20,16 @@ A system that conducts AI-powered interviews by analyzing resumes and job descri
 
 ## Getting Started
 
-1. Clone the repository
-2. Install dependencies for both client and server
-3. Configure MongoDB connection
-4. Set up API keys for AI services
-5. Run development servers
+Requires Node 22+ (`nvm use`) and pnpm (`corepack enable`).
 
 ```
-cd client && npm install && npm run dev
-cd ../server && npm install && npm start
+pnpm install
+cp server/.env.example server/.env   # then fill in GROQ_API_KEY and MONGODB_URI
+pnpm dev                             # client on http://localhost:5173, API proxied to :8080
 ```
+
+`pnpm typecheck`, `pnpm lint` and `pnpm build` run across both packages.
+
+## Deployment
+
+One Vercel project from the repo root: the client builds to static files and `api/index.ts` serves the Express API under `/api/*` (see `vercel.json`). Set `MONGODB_URI`, `GROQ_API_KEY` and optionally `AI_MODEL` in the Vercel project's environment variables.

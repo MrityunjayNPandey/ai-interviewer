@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { gptContext } from "..";
+import type { gptContext } from "../app";
 import interviewContextModel from "../db/models/interviewContextModel";
 import interviewModel from "../db/models/interviewModel";
 
@@ -12,7 +12,7 @@ export const getGPTContext = async (emailId: string) => {
     return { gptContext: [], interview: null };
   }
 
-  let gptContext: any = [];
+  const gptContext: gptContext[] = [];
 
   const interviewContexts = await interviewContextModel
     .find({ interviewId: interview?._id })
@@ -20,7 +20,7 @@ export const getGPTContext = async (emailId: string) => {
 
   interviewContexts.forEach((context) => {
     gptContext.push({
-      role: context.role,
+      role: context.role as gptContext["role"],
       content: context.content,
     });
   });

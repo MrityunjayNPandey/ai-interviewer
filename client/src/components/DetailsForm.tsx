@@ -3,9 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-
-const API_BASE_URL =
-  import.meta.env.VITE_SERVER_URL || "http://localhost:3000/api";
+import { API_BASE_URL } from "../App";
 
 interface SubmitDetailsPayload {
   emailId: string;
@@ -42,10 +40,6 @@ function DetailsForm() {
   const location = useLocation();
 
   const { email } = location?.state ?? {};
-  if (!email) {
-    console.error("Email not found in location state.");
-    return <Navigate to="/" />;
-  }
 
   const mutation = useMutation({
     mutationFn: submitJdAndResumeFn,
@@ -57,6 +51,10 @@ function DetailsForm() {
       console.error("Failed to submit details:", error);
     },
   });
+
+  if (!email) {
+    return <Navigate to="/" />;
+  }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();

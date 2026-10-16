@@ -4,7 +4,7 @@ import DetailsForm from "./components/DetailsForm";
 import EmailForm from "./components/EmailForm";
 import Interview from "./components/Interview";
 
-export const API_BASE_URL = import.meta.env.VITE_SERVER_URL;
+export const API_BASE_URL = "/api";
 
 function App() {
   return (

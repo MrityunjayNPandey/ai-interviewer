@@ -76,13 +76,9 @@ function Interview() {
   const [showEndInterviewButton, setShowEndInterviewButton] = useState(false);
 
   const { email } = location?.state ?? {};
-  if (!email) {
-    console.error("Email not found in location state.");
-    return <Navigate to="/" />;
-  }
 
   const { isLoading, refetch: fetchQuestion } = useQuery({
-    queryKey: ["question"],
+    queryKey: ["question", email],
     queryFn: () =>
       getQuestionFn(email)
         .then((data) => {
@@ -90,12 +86,15 @@ function Interview() {
           setShowAnswerBox(true);
           setShowNextQuestionButton(false);
           setShowEndInterviewButton(false);
+          // React Query v5 rejects undefined query data.
+          return data;
         })
         .catch((error) => {
           console.error("Error fetching question:", error);
           navigate("/");
+          return null;
         }),
-    enabled: true,
+    enabled: Boolean(email),
   });
 
   const answerMutation = useMutation({
@@ -126,6 +125,10 @@ function Interview() {
       navigate("/");
     },
   });
+
+  if (!email) {
+    return <Navigate to="/" />;
+  }
 
   const handleAnswerSubmit = () => {
     if (!answer.trim()) {
