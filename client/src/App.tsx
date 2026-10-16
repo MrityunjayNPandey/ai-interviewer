@@ -1,22 +1,19 @@
 import { Route, Routes } from "react-router-dom";
-import "./App.css";
-import DetailsForm from "./components/DetailsForm";
-import EmailForm from "./components/EmailForm";
-import Interview from "./components/Interview";
+import Layout from "./components/Layout";
+import HomePage from "./pages/HomePage";
+import InterviewPage from "./pages/interview/InterviewPage";
+import NotFoundPage from "./pages/NotFoundPage";
+import SetupPage from "./pages/setup/SetupPage";
 
-export const API_BASE_URL = "/api";
-
-function App() {
+export default function App() {
   return (
-    <>
-      <h1 style={{ color: "#007bff" }}>AI Interviewer</h1>
-      <Routes>
-        <Route path="/" element={<EmailForm />} />
-        <Route path="/details" element={<DetailsForm />} />
-        <Route path="/interview" element={<Interview />} />
-      </Routes>
-    </>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<HomePage />} />
+        <Route path="new" element={<SetupPage />} />
+        <Route path="interviews/:id" element={<InterviewPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;
