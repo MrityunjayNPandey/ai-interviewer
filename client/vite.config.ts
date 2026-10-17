@@ -7,7 +7,8 @@ export default defineConfig({
   server: {
     // In dev the API runs separately; in production Vercel serves it from the same origin.
     proxy: {
-      "/api": `http://localhost:${process.env.API_PORT ?? 8080}`,
+      // 127.0.0.1, not localhost: the server listens on IPv4, and some Node versions resolve localhost to ::1 first.
+      "/api": `http://127.0.0.1:${process.env.API_PORT ?? 8080}`,
     },
   },
   build: {

@@ -39,7 +39,7 @@ Key paths:
 
 ## Getting started
 
-Requires **Node 22+** (`nvm use`) and **pnpm** (`corepack enable`, or `npm i -g pnpm@10`).
+Requires **Node 22+** and **pnpm 10**. With nvm: `nvm use` (reads `.nvmrc`), then `corepack enable` so `pnpm` is the pinned version. `pnpm` refuses to run on older Node (`engine-strict`); to make 22 your default, `nvm alias default 22`.
 
 ```sh
 pnpm install
