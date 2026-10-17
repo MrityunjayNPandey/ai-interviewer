@@ -16,6 +16,10 @@ import { CandidateModel, CHALLENGE_TTL_MS, ChallengeModel, type CandidateDoc, ty
 export type RelyingParty = { id: string; origin: string };
 
 const RP_NAME = "AI Interviewer";
+/** Plenty for every device someone owns; stops a script from growing one history without bound. */
+export const MAX_PASSKEYS = 10;
+
+const tooManyPasskeys = () => conflict(`You can save up to ${MAX_PASSKEYS} passkeys. Remove one from your device's settings first.`);
 
 const passkeyFailed = () =>
   new HttpError(400, "INVALID_REQUEST", "That passkey couldn't be verified. Please try again.");
@@ -73,8 +77,11 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
   return {
     status,
 
+    isSaved: async (candidateId: string) => isSaved(await find(candidateId)),
+
     async passkeyRegistrationOptions(candidateId: string, rp: RelyingParty) {
       const doc = await find(candidateId);
+      if ((doc?.passkeys.length ?? 0) >= MAX_PASSKEYS) throw tooManyPasskeys();
       const options = await generateRegistrationOptions({
         rpName: RP_NAME,
         rpID: rp.id,
@@ -99,6 +106,7 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
         requireUserVerification: false,
       }).catch(unverified);
       if (!result?.verified) throw passkeyFailed();
+      if (((await find(candidateId))?.passkeys.length ?? 0) >= MAX_PASSKEYS) throw tooManyPasskeys();
 
       const { credential } = result.registrationInfo;
       await CandidateModel.updateOne(

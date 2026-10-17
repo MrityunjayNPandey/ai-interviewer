@@ -73,9 +73,7 @@ async function ensureWidget(): Promise<Widget> {
   return state;
 }
 
-/** A fresh, single-use token, or null when bot checks aren't configured. */
-export async function getBotCheckToken(): Promise<string | null> {
-  if (!SITE_KEY) return null;
+async function nextToken(): Promise<string> {
   const turnstile = await loadTurnstile();
   const current = await ensureWidget();
   turnstile.reset(current.id); // tokens are single-use: always start from a clean widget
@@ -83,6 +81,17 @@ export async function getBotCheckToken(): Promise<string | null> {
     current.pending = { resolve, reject };
     turnstile.execute(current.id);
   });
+}
+
+// One widget serves every request, so requests take turns: a second one would reset the first.
+let queue: Promise<unknown> = Promise.resolve();
+
+/** A fresh, single-use token, or null when bot checks aren't configured. */
+export async function getBotCheckToken(): Promise<string | null> {
+  if (!SITE_KEY) return null;
+  const token = queue.then(nextToken, nextToken);
+  queue = token.catch(() => undefined);
+  return token;
 }
 
 /** Headers carrying a bot-check token, when bot checks are configured. */

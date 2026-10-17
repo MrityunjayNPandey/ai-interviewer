@@ -31,7 +31,7 @@ export default function MaterialsStep({ draft, update }: Props) {
   const [fileError, setFileError] = useState<string | null>(null);
 
   const extract = useMutation({
-    mutationFn: (file: File) => api.upload<{ text: string }>("/setup/resume-text", file),
+    mutationFn: async (file: File) => api.upload<{ text: string }>("/setup/resume-text", file, await botCheckHeaders()),
     onSuccess: ({ text }, file) => update({ resumeText: text, resumeFileName: file.name }),
   });
 
@@ -43,8 +43,8 @@ export default function MaterialsStep({ draft, update }: Props) {
         await botCheckHeaders()
       );
       // The match is a nice-to-have: if it fails, the review step offers a retry.
-      const match = await api
-        .post<{ match: Match }>("/setup/match", parsed)
+      const match = await botCheckHeaders()
+        .then((headers) => api.post<{ match: Match }>("/setup/match", parsed, headers))
         .then((res) => res.match)
         .catch(() => null);
       return { ...parsed, match };

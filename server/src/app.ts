@@ -53,7 +53,13 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.register(
     async (api) => {
       // Every API reply identifies the browser, so a new (or pre-cookie) browser gets its cookie from the first call.
-      api.addHook("preHandler", requireCandidate);
+      api.addHook(
+        "preHandler",
+        requireCandidate(async (id) => {
+          await connect();
+          return !(await account.isSaved(id));
+        })
+      );
       api.get("/health", async () => ({ ok: true }));
       api.get("/models", async () => {
         const defaultId = registry.defaultModel()?.id;
@@ -78,7 +84,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
         });
         db.register(setupRoutes, { prefix: "/setup", ai, registry, budget, search, verifyHuman, now: options.now });
         db.register(interviewRoutes, { prefix: "/interviews", service, budget, verifyHuman, now: options.now });
-        db.register(accountRoutes, { prefix: "/account", account, verifyHuman });
+        db.register(accountRoutes, { prefix: "/account", account, budget, verifyHuman, now: options.now });
       });
     },
     { prefix: "/api" }

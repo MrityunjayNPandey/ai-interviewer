@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { botCheckHeaders } from "../../api/botCheck";
 import { api, ApiError } from "../../api/client";
 import type { BriefingItem, RoleBriefing } from "../../api/types";
 import { briefingSubjectKey, cleanRequirements, type Draft } from "./draft";
@@ -110,9 +111,9 @@ export default function BriefingCard({ draft, update }: Props) {
   const stale = Boolean(briefing) && draft.briefingFor !== subjectKey;
 
   const research = useMutation({
-    mutationFn: (refresh: boolean) => {
+    mutationFn: async (refresh: boolean) => {
       const { title, company, seniority } = cleanRequirements(requirements);
-      return api.post<{ briefing: RoleBriefing }>("/setup/research", { title, company, seniority, refresh });
+      return api.post<{ briefing: RoleBriefing }>("/setup/research", { title, company, seniority, refresh }, await botCheckHeaders());
     },
     onSuccess: ({ briefing: next }) => update({ briefing: next, briefingFor: subjectKey }),
   });

@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
+import { botCheckHeaders } from "../../api/botCheck";
 import { api } from "../../api/client";
 import type { CandidateProfile, Match, RoleRequirements } from "../../api/types";
 import BriefingCard from "./BriefingCard";
@@ -29,11 +30,12 @@ type Props = { draft: Draft; update: (changes: Partial<Draft>) => void };
 
 function MatchCard({ draft, update }: Props) {
   const refresh = useMutation({
-    mutationFn: () =>
-      api.post<{ match: Match }>("/setup/match", {
-        profile: cleanProfile(draft.profile!),
-        requirements: cleanRequirements(draft.requirements!),
-      }),
+    mutationFn: async () =>
+      api.post<{ match: Match }>(
+        "/setup/match",
+        { profile: cleanProfile(draft.profile!), requirements: cleanRequirements(draft.requirements!) },
+        await botCheckHeaders()
+      ),
     onSuccess: ({ match }) => update({ match, matchStale: false }),
   });
   const { match } = draft;

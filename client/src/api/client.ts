@@ -74,8 +74,8 @@ export const api = {
   async delete(path: string): Promise<void> {
     await send(path, { method: "DELETE" });
   },
-  async upload<T>(path: string, file: File): Promise<T> {
-    return (await send(path, { method: "POST", headers: { "Content-Type": file.type }, body: file })).json() as Promise<T>;
+  async upload<T>(path: string, file: File, headers: Record<string, string> = {}): Promise<T> {
+    return (await send(path, { method: "POST", headers: { "Content-Type": file.type, ...headers }, body: file })).json() as Promise<T>;
   },
 
   /** POSTs to a streaming endpoint, calling `onDelta` with each text chunk; resolves with the updated interview. */

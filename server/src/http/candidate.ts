@@ -38,17 +38,23 @@ export const setCandidateCookie = (reply: FastifyReply, id: string) => writeCook
 
 export const clearCandidateCookie = (reply: FastifyReply) => writeCookie(reply, "", 0);
 
-/** preHandler hook: identifies the candidate, giving a new browser an id. */
-export async function requireCandidate(request: FastifyRequest, reply: FastifyReply) {
-  const cookie = request.cookies[CANDIDATE_COOKIE];
-  if (valid(cookie)) {
-    candidates.set(request, cookie.toLowerCase());
-    return;
-  }
-  const legacy = header(request, LEGACY_CANDIDATE_HEADER);
-  const id = valid(legacy) ? legacy.toLowerCase() : randomUUID();
-  setCandidateCookie(reply, id);
-  candidates.set(request, id);
+/**
+ * preHandler hook: identifies the candidate, giving a new browser an id. `mayAdoptLegacy` says
+ * whether a legacy id may be taken over: a saved history must be restored with its passkey or
+ * recovery code, never by just presenting its id.
+ */
+export function requireCandidate(mayAdoptLegacy: (id: string) => Promise<boolean>) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const cookie = request.cookies[CANDIDATE_COOKIE];
+    if (valid(cookie)) {
+      candidates.set(request, cookie.toLowerCase());
+      return;
+    }
+    const legacy = header(request, LEGACY_CANDIDATE_HEADER)?.toLowerCase();
+    const id = valid(legacy) && (await mayAdoptLegacy(legacy)) ? legacy : randomUUID();
+    setCandidateCookie(reply, id);
+    candidates.set(request, id);
+  };
 }
 
 export function candidateId(request: FastifyRequest): string {

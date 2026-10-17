@@ -38,6 +38,9 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
   { ai, registry, budget, search, verifyHuman, now = () => new Date() }
 ) => {
   app.addHook("preHandler", pauseNewWork());
+  // Every setup step costs AI tokens, web searches or PDF parsing, and none needs an interview first,
+  // so each one needs a human: otherwise a script could spend the shared daily caps without one.
+  app.addHook("preHandler", requireHuman(verifyHuman));
   const meter = (req: FastifyRequest) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
 
   // Only this plugin accepts PDFs; the bytes are kept in memory and discarded after extraction.
@@ -78,8 +81,7 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       return { text: cleaned.slice(0, MAX_RESUME_CHARS) };
   });
 
-  // Analyse is where a new setup starts, so it is the step that needs a human.
-  app.post("/parse", { preHandler: requireHuman(verifyHuman) }, async (req) => {
+  app.post("/parse", async (req) => {
     const { resumeText, jobDescription } = z
       .object({
         resumeText: z.string().trim().min(1, "Add your resume").max(MAX_RESUME_CHARS),

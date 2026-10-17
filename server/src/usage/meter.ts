@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { isIPv6 } from "node:net";
 import { HttpError } from "../http/errors";
 
 /**
@@ -18,6 +19,10 @@ export type Budget = {
   tokensGlobal: number;
   /** Web searches across all users (cache misses only). Tavily's free tier is ~1,000 a month. */
   searchesGlobal: number;
+  /** Web searches per IP, so one network can't use up the global searches. */
+  searchesPerIp: number;
+  /** Passkey and sign-in attempts per IP per minute: each stores a challenge. */
+  accountActionsPerMinute: number;
 };
 
 export const DEFAULT_BUDGET: Budget = {
@@ -28,6 +33,8 @@ export const DEFAULT_BUDGET: Budget = {
   aiCallsPerMinute: 20,
   tokensGlobal: 1_500_000,
   searchesGlobal: 30,
+  searchesPerIp: 9,
+  accountActionsPerMinute: 10,
 };
 
 /** Reads overrides such as DAILY_TOKENS=2000000 from the environment. */
@@ -45,6 +52,8 @@ export function budgetFromEnv(env: NodeJS.ProcessEnv = process.env): Budget {
     aiCallsPerMinute: read("AI_CALLS_PER_MINUTE", DEFAULT_BUDGET.aiCallsPerMinute),
     tokensGlobal: read("DAILY_TOKENS", DEFAULT_BUDGET.tokensGlobal),
     searchesGlobal: read("DAILY_SEARCHES", DEFAULT_BUDGET.searchesGlobal),
+    searchesPerIp: read("DAILY_SEARCHES_PER_IP", DEFAULT_BUDGET.searchesPerIp),
+    accountActionsPerMinute: read("ACCOUNT_ACTIONS_PER_MINUTE", DEFAULT_BUDGET.accountActionsPerMinute),
   };
 }
 
@@ -64,6 +73,26 @@ const CounterModel = mongoose.model("UsageCounter", counterSchema);
 type Check = { key: string; window: string; limit: number; ttlMs: number; error: () => HttpError };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The network an IP's limits are counted against. An IPv6 client usually controls a whole /64
+ * (2^64 addresses), so counting single addresses would let it reset its limits at will.
+ */
+export function ipNetwork(ip: string): string {
+  const address = ip.replace(/%.*$/, ""); // zone id, e.g. fe80::1%en0
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (mapped) return mapped[1]!;
+  if (!isIPv6(address)) return address;
+  // An embedded IPv4 tail (e.g. 64:ff9b::1.2.3.4) stands for the last two groups.
+  const hex = address.replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_, a, b, c, d) =>
+    [(+a << 8) | +b, (+c << 8) | +d].map((group) => group.toString(16)).join(":")
+  );
+  const [head = "", tail] = hex.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array<string>(8 - left.length - right.length).fill("0"), ...right];
+  return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
 
 /** Throws the first check's error whose counter has no room for its amount. */
 async function ensureRoom(checks: { check: Check; amount: number }[]) {
@@ -116,13 +145,15 @@ export type Meter = {
   tokens(count: number): Promise<void>;
   /** Counts uncached web searches. */
   searches(amount: number): Promise<void>;
+  /** Counts a passkey or sign-in attempt against the per-minute limit. */
+  accountAction(): Promise<void>;
 };
 
 export function createMeter(budget: Budget, subject: { candidateId: string; ip: string }, now = new Date()): Meter {
   const day = now.toISOString().slice(0, 10);
   const minute = now.toISOString().slice(0, 16);
   const candidate = `candidate:${subject.candidateId}`;
-  const ip = `ip:${subject.ip}`;
+  const ip = `ip:${ipNetwork(subject.ip)}`;
   const daily = (key: string, limit: number, error: () => HttpError): Check => ({
     key,
     window: day,
@@ -130,10 +161,10 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
     ttlMs: 2 * DAY_MS,
     error,
   });
-  const perMinute = (key: string): Check => ({
+  const perMinute = (key: string, limit = budget.aiCallsPerMinute): Check => ({
     key,
     window: minute,
-    limit: budget.aiCallsPerMinute,
+    limit,
     ttlMs: 5 * 60_000,
     error: slowDown,
   });
@@ -164,6 +195,15 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
       await add(burst, calls, now);
     },
     tokens: (count) => add(tokenChecks, count, now),
-    searches: (amount) => charge([daily("searches:global", budget.searchesGlobal, atCapacity)], amount, now),
+    searches: (amount) =>
+      charge(
+        [
+          daily(`searches:${ip}`, budget.searchesPerIp, dailyLimit("Today's research limit for your network has been reached. Come back tomorrow!")),
+          daily("searches:global", budget.searchesGlobal, atCapacity),
+        ],
+        amount,
+        now
+      ),
+    accountAction: () => charge([perMinute(`account-minute:${ip}`, budget.accountActionsPerMinute)], 1, now),
   };
 }

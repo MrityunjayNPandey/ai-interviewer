@@ -1,6 +1,8 @@
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
-import { asCandidate, budget, fakeAi, fakeSearch, setupFixture, testApp, useDatabase } from "./helpers";
+import type { RoleBriefing } from "../src/interview/schemas";
+import { ipNetwork } from "../src/usage/meter";
+import { asCandidate, budget, fakeAi, fakeSearch, match, profile, requirements, setupFixture, testApp, useDatabase } from "./helpers";
 
 useDatabase();
 
@@ -34,6 +36,24 @@ describe("bot check", () => {
     const id = await startInterview(candidate);
     await candidate.post(`/api/interviews/${id}/retake`).expect(403);
     await candidate.post(`/api/interviews/${id}/retake`).set("X-Turnstile-Token", humanToken).expect(201);
+  });
+
+  it("is required for every setup step, since each one spends shared capacity", async () => {
+    const { app, ai } = testApp({ verifyHuman, search: fakeSearch() });
+    const candidate = asCandidate(app);
+
+    for (const res of [
+      await candidate.post("/api/setup/match", { profile, requirements }),
+      await candidate.post("/api/setup/research", { title: "SRE", company: "Initech", seniority: null, refresh: true }),
+      await request(app).post("/api/setup/resume-text").set("Content-Type", "application/pdf").send(Buffer.from("%PDF-1.4")),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("BOT_CHECK_FAILED");
+    }
+    expect(ai.calls).toEqual([]);
+
+    const res = await candidate.post("/api/setup/match", { profile, requirements }).set("X-Turnstile-Token", humanToken).expect(200);
+    expect(res.body.match).toEqual(match);
   });
 
   it("isn't asked again during an interview", async () => {
@@ -103,6 +123,65 @@ describe("AI usage budget", () => {
     expect(res.body.code).toBe("CAPACITY");
     // Cached briefings are still served.
     await asCandidate(app).post("/api/setup/research", { title: "SRE", company: "Initech", seniority: null }).expect(200);
+  });
+
+  it("caps each network's web searches, so refreshing can't use up everyone's", async () => {
+    const search = fakeSearch();
+    const { app } = testApp({ search, budget: budget({ searchesPerIp: 3 }) });
+    const subject = { title: "SRE", company: "Initech", seniority: null, refresh: true };
+    await asCandidate(app).post("/api/setup/research", subject).expect(200);
+
+    // A fresh browser on the same network is still the same network.
+    const res = await asCandidate(app).post("/api/setup/research", subject).expect(429);
+    expect(res.body.code).toBe("DAILY_LIMIT");
+    expect(search.queries).toHaveLength(3);
+  });
+
+  it("counts an IPv6 client's whole /64 as one network", async () => {
+    process.env.VERCEL = "1";
+    const { app } = testApp({ budget: budget({ interviewsPerIp: 1 }) });
+    await asCandidate(app).post("/api/interviews", setupFixture()).set("X-Vercel-Forwarded-For", "2001:db8:1:2::1").expect(201);
+    const res = await asCandidate(app)
+      .post("/api/interviews", setupFixture())
+      .set("X-Vercel-Forwarded-For", "2001:db8:1:2:ffff:ffff:ffff:ffff")
+      .expect(429);
+    expect(res.body.code).toBe("DAILY_LIMIT");
+    await asCandidate(app).post("/api/interviews", setupFixture()).set("X-Vercel-Forwarded-For", "2001:db8:1:3::1").expect(201);
+  });
+});
+
+describe("ipNetwork", () => {
+  it.each([
+    ["203.0.113.9", "203.0.113.9"],
+    ["::ffff:203.0.113.9", "203.0.113.9"],
+    ["2001:db8:1:2::1", "2001:db8:1:2::/64"],
+    ["2001:0DB8:0001:0002:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::/64"],
+    ["2001:db8::1", "2001:db8:0:0::/64"],
+    ["::1", "0:0:0:0::/64"],
+    ["fe80::1%en0", "fe80:0:0:0::/64"],
+    ["1:2:3:4:5:6:1.2.3.4", "1:2:3:4::/64"],
+    ["unknown", "unknown"],
+  ])("groups %s as %s", (ip, network) => {
+    expect(ipNetwork(ip)).toBe(network);
+  });
+});
+
+describe("setups from the browser", () => {
+  it("only accept web links as briefing sources", async () => {
+    const { app } = testApp();
+    const briefing: RoleBriefing = {
+      scope: "role",
+      about: [],
+      process: [],
+      questions: [{ text: "Design a cache.", sourceIds: [1] }],
+      topics: [],
+      sources: [{ id: 1, title: "Click me", url: "javascript:alert(document.cookie)" }],
+      generatedAt: new Date().toISOString(),
+    };
+    const res = await asCandidate(app).post("/api/interviews", setupFixture({ briefing })).expect(400);
+    expect(res.body.message).toMatch(/web addresses/);
+    const web = { ...briefing, sources: [{ id: 1, title: "Caching", url: "https://example.com/cache" }] };
+    await asCandidate(app).post("/api/interviews", setupFixture({ briefing: web })).expect(201);
   });
 });
 

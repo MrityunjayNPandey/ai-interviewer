@@ -8,9 +8,9 @@ the layers that prevent that, and what to set up before releasing it.
 
 | Layer | What it does | Where |
 |---|---|---|
-| Bot check | Cloudflare Turnstile token required to **Analyse**, **Start interview** and **Practise again**. Single-use, verified server-side, fails closed. | `server/src/http/botcheck.ts`, `client/src/api/botCheck.ts` |
-| Per-person daily budget | AI tokens: 150,000 per candidate, 300,000 per IP, as reported by the provider (estimated at four characters a token when it doesn't report usage). Interviews: 5 per candidate, 5 per IP. | `server/src/usage/meter.ts` |
-| Burst limit | 20 AI calls per minute, per candidate and per IP. | same |
+| Bot check | Cloudflare Turnstile token required for every setup step (**resume upload**, **Analyse**, the **match**, **research**), **Start interview**, **Practise again** and restoring with a recovery code. Single-use, verified server-side, fails closed. | `server/src/http/botcheck.ts`, `client/src/api/botCheck.ts` |
+| Per-person daily budget | AI tokens: 150,000 per candidate, 300,000 per IP, as reported by the provider (estimated at four characters a token when it doesn't report usage). Interviews: 5 per candidate, 5 per IP. Uncached web searches: 9 per IP. An IPv6 client's whole /64 counts as one IP, since one client usually controls all of it. | `server/src/usage/meter.ts` |
+| Burst limit | 20 AI calls per minute, per candidate and per IP; 10 passkey or sign-in attempts per minute per IP. | same |
 | Global daily caps | 1,500,000 AI tokens and 30 uncached web searches a day across everyone, under the providers' and Tavily's free quotas. Users see "out of free capacity for today" instead of random failures. | same |
 | Charged per AI call | Every AI call checks the budget right before it's made and records its tokens when it finishes; re-showing a saved question costs nothing. | `server/src/interview/service.ts` |
 | Hard caps per interview | At most 12 questions, 2 retries and 5 coach messages per question; answer and message length limits. | `server/src/interview/schemas.ts` |
@@ -37,8 +37,11 @@ All budgets are environment variables (see `server/.env.example`).
   issued by the server as an `HttpOnly; SameSite=Strict` cookie on `/api` (`Secure` on Vercel), so page
   scripts can't read it.
 - **Saved history.** Passkeys are verified with WebAuthn (single-use challenges, 5-minute expiry, bound to
-  the site's hostname). Recovery codes have 100 random bits, are stored only as a SHA-256 hash, and
-  restoring with one needs the bot check (`server/src/account/`).
+  the production domain on Vercel, from `VERCEL_PROJECT_PRODUCTION_URL`, never the request's Host), up to
+  10 per history. Recovery codes have 100 random bits, are stored only as a SHA-256 hash, and restoring
+  with one needs the bot check (`server/src/account/`). Browsers from before the cookie can carry their id
+  over in a header, but only while that history isn't saved: a saved one needs its passkey or code.
+- **Stored links.** Briefing source links must be http(s), including in setups sent from the browser.
 - **Dependencies.** `pnpm audit` reports no known vulnerabilities.
 
 ## Known limits
@@ -49,7 +52,9 @@ All budgets are environment variables (see `server/.env.example`).
 - **Interviews are kept indefinitely**, including resume text. Candidates can delete their own.
 - **The browser id is the key** to a candidate's interviews: until they save their history, clearing
   site data loses access. Anyone with access to the browser, or to a candidate's passkey or recovery
-  code, can see them.
+  code, can see them. An id never changes: signing out or replacing the recovery code doesn't revoke a
+  copied cookie.
+- **Passkeys only work on the production domain** on Vercel, not on preview deployments.
 - **Restoring on a shared computer** also moves in that browser's unsaved interviews, which may be a
   previous person's.
 
@@ -61,7 +66,8 @@ All budgets are environment variables (see `server/.env.example`).
    - Create a database user with **readWrite on this database only**, and a long random password.
    - Network access: Vercel functions don't have fixed IPs, so allow `0.0.0.0/0` and rely on the
      credentials; never reuse this user elsewhere.
-3. **Vercel:** set every server variable from `server/.env.example` for Production. Turn on
+3. **Vercel:** set every server variable from `server/.env.example` for Production. Leave
+   **Automatically expose System Environment Variables** on: passkeys need `VERCEL_PROJECT_PRODUCTION_URL`. Turn on
    **Spend Management** with a hard limit, so a traffic spike can never produce a bill.
 4. **Provider keys:** use keys created only for this app, so they can be revoked without breaking
    anything else. Leave optional providers unset if you don't want them offered.

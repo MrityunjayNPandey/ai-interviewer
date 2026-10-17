@@ -64,7 +64,14 @@ export const roleBriefingSchema = z.object({
   questions: z.array(briefingItemSchema).max(15),
   topics: z.array(briefingItemSchema).max(12),
   sources: z
-    .array(z.object({ id: z.number().int().min(1), title: text(300), url: z.string().url().max(2000) }))
+    .array(
+      z.object({
+        id: z.number().int().min(1),
+        title: text(300),
+        // Setups come from the browser, so only web links are accepted (never e.g. javascript:).
+        url: z.string().url().max(2000).regex(/^https?:\/\//i, "Source links must be web addresses"),
+      })
+    )
     .max(20),
   generatedAt: z.string(),
 });

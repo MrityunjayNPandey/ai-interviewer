@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { asCandidate, setupFixture, testApp, useDatabase, type TestApp } from "./helpers";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_PASSKEYS } from "../src/account/service";
+import { asCandidate, budget, setupFixture, testApp, useDatabase, type TestApp } from "./helpers";
 
 // Real passkeys need a real authenticator, so verification is faked: a response "signs" whatever
 // challenge it carries, and the fake asks our expectedChallenge callback whether that challenge is valid.
@@ -34,6 +35,11 @@ useDatabase();
 
 beforeEach(() => {
   webauthn.lastVerify = null;
+});
+
+afterEach(() => {
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
 });
 
 const credential = (id: string, challenge: string) => ({ id, rawId: id, type: "public-key", response: { challenge } });
@@ -87,6 +93,16 @@ describe("the candidate cookie", () => {
     const res = await request(app).get("/api/interviews").set("X-Candidate-Id", legacy.id.toUpperCase()).expect(200);
     expect(cookieId(res)).toBe(legacy.id);
     expect(res.body.interviews.map((i: { id: string }) => i.id)).toEqual([id]);
+  });
+
+  it("isn't adopted from the legacy header once that history is saved: restoring it needs the passkey or code", async () => {
+    const owner = asCandidate(app);
+    await startInterview(owner);
+    await owner.post("/api/account/recovery-code").expect(200);
+
+    const res = await request(app).get("/api/interviews").set("X-Candidate-Id", owner.id).expect(200);
+    expect(cookieId(res)).not.toBe(owner.id);
+    expect(res.body.interviews).toEqual([]);
   });
 
   it("wins over the legacy header", async () => {
@@ -221,6 +237,29 @@ describe("saving and restoring with a passkey", () => {
   it("rejects a passkey that isn't saved here", async () => {
     const { app } = testApp();
     await signInWithPasskey(asCandidate(app), 404, "unknown");
+  });
+
+  it(`allows up to ${MAX_PASSKEYS} passkeys per history`, async () => {
+    const { app } = testApp({ budget: budget({ accountActionsPerMinute: 100 }) });
+    const laptop = asCandidate(app);
+    for (let i = 0; i < MAX_PASSKEYS; i++) await savePasskey(laptop, 200, `passkey-${i}`);
+    await laptop.post("/api/account/passkeys/options").expect(409);
+  });
+
+  it("limits how fast challenges are issued", async () => {
+    const { app } = testApp({ budget: budget({ accountActionsPerMinute: 2 }) });
+    await asCandidate(app).post("/api/account/sign-in/options").expect(200);
+    await asCandidate(app).post("/api/account/passkeys/options").expect(200);
+    const res = await asCandidate(app).post("/api/account/sign-in/options").expect(429);
+    expect(res.body.code).toBe("RATE_LIMITED");
+  });
+
+  it("belongs to the production domain on Vercel, whatever Host the request names", async () => {
+    process.env.VERCEL = "1";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "interviewer.example";
+    const { app } = testApp();
+    await savePasskey(asCandidate(app), 200);
+    expect(webauthn.lastVerify).toMatchObject({ expectedRPID: "interviewer.example", expectedOrigin: "https://interviewer.example" });
   });
 });
 
