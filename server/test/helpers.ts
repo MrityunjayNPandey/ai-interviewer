@@ -50,13 +50,13 @@ export function fakeAi(handlers: { stream?: StreamHandler; json?: JsonHandler; t
       const result = await (handlers.stream ?? defaultStream)(model.id, messages);
       if (result instanceof Error) throw result;
       for (const word of result.split(/(?<= )/)) yield word;
-      await onTokens?.(tokensPerCall);
+      await onTokens?.(tokensPerCall, model.id);
     },
     async json<T>(model: { id: string }, messages: ChatMessage[], schema: ZodType<T>, onTokens?: OnTokens) {
       calls.push({ kind: "json", model: model.id, messages });
       const value = handlers.json ? handlers.json(model.id, messages) : defaultJson(messages);
       if (value instanceof Error) throw value;
-      await onTokens?.(tokensPerCall);
+      await onTokens?.(tokensPerCall, model.id);
       return schema.parse(value);
     },
   };

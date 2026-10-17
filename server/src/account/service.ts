@@ -79,6 +79,12 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
 
     isSaved: async (candidateId: string) => isSaved(await find(candidateId)),
 
+    /** Which of these candidates have saved their history. */
+    async savedAmong(candidateIds: string[]): Promise<Set<string>> {
+      const docs = await CandidateModel.find({ _id: { $in: candidateIds } }).lean<CandidateDoc[]>();
+      return new Set(docs.filter(isSaved).map((doc) => doc._id));
+    },
+
     async passkeyRegistrationOptions(candidateId: string, rp: RelyingParty) {
       const doc = await find(candidateId);
       if ((doc?.passkeys.length ?? 0) >= MAX_PASSKEYS) throw tooManyPasskeys();

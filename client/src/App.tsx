@@ -8,6 +8,7 @@ import NotFoundPage from "./pages/NotFoundPage";
 // The setup wizard and the interview room load on demand, so the home page stays light.
 const SetupPage = lazy(() => import("./pages/setup/SetupPage"));
 const InterviewPage = lazy(() => import("./pages/interview/InterviewPage"));
+const UsagePage = lazy(() => import("./pages/admin/UsagePage"));
 
 function PageLoading() {
   return (
@@ -35,6 +36,14 @@ export default function App() {
           element={
             <Suspense fallback={<PageLoading />}>
               <InterviewPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="admin"
+          element={
+            <Suspense fallback={<PageLoading />}>
+              <UsagePage />
             </Suspense>
           }
         />

@@ -61,8 +61,8 @@ const json = (body: unknown, headers: Record<string, string> = {}): RequestInit 
 });
 
 export const api = {
-  async get<T>(path: string): Promise<T> {
-    return (await send(path)).json() as Promise<T>;
+  async get<T>(path: string, headers: Record<string, string> = {}): Promise<T> {
+    return (await send(path, { headers })).json() as Promise<T>;
   },
   async post<T>(path: string, body: unknown = {}, headers: Record<string, string> = {}): Promise<T> {
     const response = await send(path, json(body, headers));

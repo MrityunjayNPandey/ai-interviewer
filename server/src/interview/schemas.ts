@@ -194,6 +194,32 @@ export type ModelOption = {
   isDefault: boolean;
 };
 
+/** A used / limit pair for one daily cap. */
+export type Allowance = { used: number; limit: number; remaining: number };
+
+/** The admin usage report (GET /api/admin/usage): one UTC day, heaviest users first. */
+export type UsageReport = {
+  day: string;
+  /** The days with data: counters are kept two days. */
+  today: string;
+  yesterday: string;
+  tokens: Allowance;
+  searches: Allowance;
+  interviewsStarted: number;
+  /** Configured models. `limit` and `remaining` are null for a model without its own daily cap. */
+  models: { id: string; label: string; provider: string; used: number; limit: number | null; remaining: number | null }[];
+  candidates: { id: string; tokens: number; interviews: number; saved: boolean }[];
+  networks: { network: string; tokens: number; interviews: number; searches: number }[];
+  /** The per-person caps, to read the rows against. */
+  limits: {
+    tokensPerCandidate: number;
+    tokensPerIp: number;
+    interviewsPerCandidate: number;
+    interviewsPerIp: number;
+    searchesPerIp: number;
+  };
+};
+
 /** Events in an NDJSON stream from the question and answer endpoints. */
 export type StreamEvent =
   | { type: "delta"; text: string }

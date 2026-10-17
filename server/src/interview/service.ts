@@ -26,7 +26,7 @@ export type Deps = {
 
 type OnDelta = (text: string) => void;
 /**
- * The usage budget for one request: `aiCalls()` right before each AI call throws when it's exhausted,
+ * The usage budget for one request: `aiCalls(model)` right before each AI call throws when it's exhausted,
  * and `tokens` receives what each call used.
  */
 export type Charge = Pick<Meter, "aiCalls" | "tokens">;
@@ -185,7 +185,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
           throw conflict("The next question is already being generated");
         }
         index = turns.length - 1;
-        await charge.aiCalls();
+        await charge.aiCalls(model);
         const reclaimed = await InterviewModel.updateOne(
           { _id: doc._id, [`turns.${index}.questionStartedAt`]: last.questionStartedAt },
           { $set: { [`turns.${index}.questionStartedAt`]: current } }
@@ -193,7 +193,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         if (!reclaimed.modifiedCount) throw conflict("The next question is already being generated");
       } else {
         if (turns.length >= doc.setup.length) throw conflict("All questions have been answered. End the interview to see your report.");
-        await charge.aiCalls();
+        await charge.aiCalls(model);
         // Reserve the slot atomically so concurrent requests can't both add a question.
         const reserved = await InterviewModel.updateOne(
           { _id: doc._id, status: "in_progress", turns: { $size: turns.length } },
@@ -233,7 +233,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last || !isAsked(last) || last.answer) throw conflict("There is no question waiting for an answer");
-      await charge.aiCalls(); // for the feedback
+      await charge.aiCalls(modelFor(doc)); // for the feedback
 
       const updated = await InterviewModel.findOneAndUpdate(
         {
@@ -266,7 +266,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last?.answer || last.feedback) throw conflict("There is no answer waiting for feedback");
-      await charge.aiCalls();
+      await charge.aiCalls(modelFor(doc));
       return generateFeedback(doc, index, charge, doc.setup.mode === "coach" ? onDelta : undefined);
     },
 
@@ -311,7 +311,8 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         throw conflict(`You can ask the coach up to ${MAX_COACH_MESSAGES} questions per interview question`);
       }
 
-      await charge.aiCalls();
+      const model = modelFor(doc);
+      await charge.aiCalls(model);
       const attempt = (turn.previousAttempts ?? []).length;
       // Reserve: append the candidate's message only if nobody else did meanwhile (one reply at a time).
       const path = `turns.${index}.coachMessages`;
@@ -323,7 +324,6 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       );
       if (!reserved.modifiedCount) throw conflict("The coach is still replying to your last message");
 
-      const model = modelFor(doc);
       try {
         const reply = await collect(ai.stream(model, coachChatMessages(doc.setup, turn, chat, message), charge.tokens), onDelta);
         if (!reply) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
@@ -355,7 +355,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       if (!answered.length) throw conflict("Answer at least one question before ending the interview");
 
       const model = modelFor(doc);
-      await charge.aiCalls();
+      await charge.aiCalls(model);
       const report = normalizeReport(await ai.json(model, reportMessages(doc.setup, answered), reportSchema, charge.tokens), answered.length);
 
       const updated = await InterviewModel.findOneAndUpdate(

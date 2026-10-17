@@ -20,6 +20,7 @@ export type {
   Setup,
   StreamEvent,
   TurnView,
+  UsageReport,
 } from "../../../server/src/interview/schemas";
 
 export type { AccountStatus } from "../../../server/src/account/schemas";

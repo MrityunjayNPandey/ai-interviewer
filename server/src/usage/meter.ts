@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import { isIPv6 } from "node:net";
+import type { ModelConfig } from "../ai/models";
 import { HttpError } from "../http/errors";
 
 /**
@@ -73,6 +74,7 @@ const CounterModel = mongoose.model("UsageCounter", counterSchema);
 type Check = { key: string; window: string; limit: number; ttlMs: number; error: () => HttpError };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MODEL_TOKENS = "tokens:model:";
 
 /**
  * The network an IP's limits are counted against. An IPv6 client usually controls a whole /64
@@ -132,17 +134,20 @@ const atCapacity = () =>
     "CAPACITY",
     "We've used up today's free AI capacity across everyone using the app. Please come back tomorrow."
   );
+const modelAtCapacity = (label: string) => () =>
+  new HttpError(503, "MODEL_UNAVAILABLE", `${label} has used up today's free capacity. Switch to another model, or come back tomorrow.`);
 
 export type Meter = {
   /** Counts a new interview (or practising again). */
   startInterview(): Promise<void>;
   /**
-   * Right before AI calls: throws when a daily token budget is used up, and counts the calls against
-   * the per-minute limit. A call's tokens are known only once it finishes, so the last one may overshoot.
+   * Right before AI calls to `model`: throws when a daily token budget (or the model's own cap) is
+   * used up, and counts the calls against the per-minute limit. A call's tokens are known only once
+   * it finishes, so the last one may overshoot.
    */
-  aiCalls(calls?: number): Promise<void>;
-  /** After an AI call: adds the tokens it used to the daily budgets. */
-  tokens(count: number): Promise<void>;
+  aiCalls(model: ModelConfig, calls?: number): Promise<void>;
+  /** After an AI call: adds the tokens it used to the daily budgets, and to its model's count. */
+  tokens(count: number, modelId: string): Promise<void>;
   /** Counts uncached web searches. */
   searches(amount: number): Promise<void>;
   /** Counts a passkey or sign-in attempt against the per-minute limit. */
@@ -169,6 +174,9 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
     error: slowDown,
   });
 
+  const modelTokens = (model: Pick<ModelConfig, "id" | "label" | "dailyTokens">) =>
+    daily(`${MODEL_TOKENS}${model.id}`, model.dailyTokens ?? Infinity, modelAtCapacity(model.label));
+
   const tokenChecks = [
     daily(`tokens:${candidate}`, budget.tokensPerCandidate, dailyLimit("You've reached today's practice limit. Come back tomorrow!")),
     daily(`tokens:${ip}`, budget.tokensPerIp, dailyLimit("Today's practice limit for your network has been reached. Come back tomorrow!")),
@@ -189,12 +197,14 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
         1,
         now
       ),
-    aiCalls: async (calls = 1) => {
+    aiCalls: async (model, calls = 1) => {
       const burst = [perMinute(`ai-minute:${candidate}`), perMinute(`ai-minute:${ip}`)];
-      await ensureRoom([...burst.map((check) => ({ check, amount: calls })), ...tokenChecks.map((check) => ({ check, amount: 1 }))]);
+      const dailyChecks = model.dailyTokens === undefined ? tokenChecks : [...tokenChecks, modelTokens(model)];
+      await ensureRoom([...burst.map((check) => ({ check, amount: calls })), ...dailyChecks.map((check) => ({ check, amount: 1 }))]);
       await add(burst, calls, now);
     },
-    tokens: (count) => add(tokenChecks, count, now),
+    // Every model's tokens are counted, capped or not, for the usage report.
+    tokens: (count, modelId) => add([...tokenChecks, modelTokens({ id: modelId, label: modelId })], count, now),
     searches: (amount) =>
       charge(
         [
@@ -206,4 +216,45 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
       ),
     accountAction: () => charge([perMinute(`account-minute:${ip}`, budget.accountActionsPerMinute)], 1, now),
   };
+}
+
+// ---- usage report ----
+
+export type UsageCounts = {
+  tokens: number;
+  searches: number;
+  /** Tokens per model id. */
+  models: Record<string, number>;
+  candidates: { id: string; tokens: number; interviews: number }[];
+  networks: { network: string; tokens: number; interviews: number; searches: number }[];
+};
+
+/**
+ * Everything counted on `day` (YYYY-MM-DD, UTC), heaviest users first. Counters are kept two days,
+ * so only today and yesterday have data.
+ */
+export async function usageOn(day: string, top = 50): Promise<UsageCounts> {
+  const counters = await CounterModel.find({ window: day }, { key: 1, count: 1 }).lean();
+  const usage: UsageCounts = { tokens: 0, searches: 0, models: {}, candidates: [], networks: [] };
+  const candidates = new Map<string, UsageCounts["candidates"][number]>();
+  const networks = new Map<string, UsageCounts["networks"][number]>();
+  const candidate = (id: string) => candidates.get(id) ?? candidates.set(id, { id, tokens: 0, interviews: 0 }).get(id)!;
+  const network = (id: string) =>
+    networks.get(id) ?? networks.set(id, { network: id, tokens: 0, interviews: 0, searches: 0 }).get(id)!;
+
+  for (const { key, count } of counters) {
+    // Keys are "<measure>:<subject>:<id>"; ids (models, IPv6 networks) may contain colons themselves.
+    const [measure, subject] = key.split(":", 2) as [string, string | undefined];
+    const id = key.slice(measure.length + (subject ?? "").length + 2);
+    if (key === "tokens:global") usage.tokens = count;
+    else if (key === "searches:global") usage.searches = count;
+    else if (subject === "model" && measure === "tokens") usage.models[id] = count;
+    else if (subject === "candidate" && (measure === "tokens" || measure === "interviews")) candidate(id)[measure] = count;
+    else if (subject === "ip" && (measure === "tokens" || measure === "interviews" || measure === "searches")) network(id)[measure] = count;
+  }
+  const heaviest = <T extends { tokens: number; interviews: number }>(rows: T[]) =>
+    rows.sort((a, b) => b.tokens - a.tokens || b.interviews - a.interviews).slice(0, top);
+  usage.candidates = heaviest([...candidates.values()]);
+  usage.networks = heaviest([...networks.values()]);
+  return usage;
 }

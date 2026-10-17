@@ -22,6 +22,12 @@ export type ModelConfig = {
   note: string;
   /** Provider-specific request parameters (e.g. reasoning effort). */
   params?: Record<string, unknown>;
+  /**
+   * Daily tokens this app may use on the model: set it a little under the provider's free daily quota,
+   * so the model is refused here (and the candidate can switch) instead of failing at the provider.
+   * Unset when the provider limits requests rather than tokens (Mistral, Gemini, OpenRouter).
+   */
+  dailyTokens?: number;
 };
 
 export const PROVIDERS: Record<ProviderId, Provider> = {
@@ -65,6 +71,7 @@ export const MODELS: ModelConfig[] = [
     label: "GPT-OSS 120B",
     note: "Best quality",
     params: { reasoning_effort: "low" },
+    dailyTokens: 190_000, // Groq free tier: 200K tokens a day per model
   },
   {
     id: "groq:qwen/qwen3.8-27b",
@@ -73,6 +80,7 @@ export const MODELS: ModelConfig[] = [
     label: "Qwen 3.8 27B",
     note: "Fast",
     params: { reasoning_effort: "none" },
+    dailyTokens: 190_000, // Groq free tier: 200K tokens a day per model
   },
   {
     id: "groq:openai/gpt-oss-20b",
@@ -81,6 +89,7 @@ export const MODELS: ModelConfig[] = [
     label: "GPT-OSS 20B",
     note: "Lightweight",
     params: { reasoning_effort: "low" },
+    dailyTokens: 190_000, // Groq free tier: 200K tokens a day per model
   },
   {
     id: "mistral:mistral-small-latest",

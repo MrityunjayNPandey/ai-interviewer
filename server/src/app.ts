@@ -12,6 +12,7 @@ import { apiSecurityHeaders } from "./http/security";
 import type { ModelOption } from "./interview/schemas";
 import { createInterviewService } from "./interview/service";
 import { accountRoutes } from "./routes/account";
+import { adminRoutes } from "./routes/admin";
 import { interviewRoutes } from "./routes/interviews";
 import { setupRoutes } from "./routes/setup";
 import { createTavilyClient, type SearchClient } from "./research/search";
@@ -85,6 +86,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
         db.register(setupRoutes, { prefix: "/setup", ai, registry, budget, search, verifyHuman, now: options.now });
         db.register(interviewRoutes, { prefix: "/interviews", service, budget, verifyHuman, now: options.now });
         db.register(accountRoutes, { prefix: "/account", account, budget, verifyHuman, now: options.now });
+        db.register(adminRoutes, { prefix: "/admin", account, registry, budget, now: options.now });
       });
     },
     { prefix: "/api" }

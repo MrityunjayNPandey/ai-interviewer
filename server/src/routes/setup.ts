@@ -90,7 +90,7 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       .parse(req.body);
     const model = parseModel();
     const usage = meter(req);
-    await usage.aiCalls(2);
+    await usage.aiCalls(model, 2);
 
     const [profile, requirements] = await Promise.all([
       ai.json(model, profileMessages(resumeText), candidateProfileSchema, usage.tokens),
@@ -105,7 +105,7 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       .parse(req.body);
     const model = parseModel();
     const usage = meter(req);
-    await usage.aiCalls(1);
+    await usage.aiCalls(model);
 
     const match = await ai.json(model, matchMessages(profile, requirements), matchSchema, usage.tokens);
     return { match };
@@ -124,12 +124,13 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
     if (!search) throw new HttpError(503, "RESEARCH_UNAVAILABLE", "Web research isn't set up on this server.");
 
     const usage = meter(req);
-    const { briefing, cached } = await researchRole({ search, ai, model: parseModel() }, subject, {
+    const model = parseModel();
+    const { briefing, cached } = await researchRole({ search, ai, model }, subject, {
       refresh: subject.refresh,
       // Only a real search counts against the limits.
       onMiss: async (searchCount) => {
         await usage.searches(searchCount);
-        await usage.aiCalls(1);
+        await usage.aiCalls(model);
       },
       onTokens: usage.tokens,
     });

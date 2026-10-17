@@ -4,8 +4,8 @@ import type { ModelConfig, ModelRegistry, ProviderId } from "./models";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-/** Receives the tokens (prompt + completion) each provider call used. */
-export type OnTokens = (count: number) => Promise<void>;
+/** Receives the tokens (prompt + completion) each provider call used, and the model that used them. */
+export type OnTokens = (count: number, modelId: string) => Promise<void>;
 
 /** The only seam between the app and AI providers; tests substitute a scripted fake. */
 export interface AiClient {
@@ -91,7 +91,7 @@ export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv =
       } catch (error) {
         throw describeFailure(model, error);
       }
-      await onTokens?.(reported ?? estimateTokens(messages, text));
+      await onTokens?.(reported ?? estimateTokens(messages, text), model.id);
     },
 
     async json(model, messages, schema, onTokens) {
@@ -113,7 +113,7 @@ export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv =
         } catch (error) {
           throw describeFailure(model, error);
         }
-        await onTokens?.(reported ?? estimateTokens(attempt, content));
+        await onTokens?.(reported ?? estimateTokens(attempt, content), model.id);
 
         let problem: string;
         try {

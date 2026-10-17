@@ -11,6 +11,7 @@ the layers that prevent that, and what to set up before releasing it.
 | Bot check | Cloudflare Turnstile token required for every setup step (**resume upload**, **Analyse**, the **match**, **research**), **Start interview**, **Practise again** and restoring with a recovery code. Single-use, verified server-side, fails closed. | `server/src/http/botcheck.ts`, `client/src/api/botCheck.ts` |
 | Per-person daily budget | AI tokens: 150,000 per candidate, 300,000 per IP, as reported by the provider (estimated at four characters a token when it doesn't report usage). Interviews: 5 per candidate, 5 per IP. Uncached web searches: 9 per IP. An IPv6 client's whole /64 counts as one IP, since one client usually controls all of it. | `server/src/usage/meter.ts` |
 | Burst limit | 20 AI calls per minute, per candidate and per IP; 10 passkey or sign-in attempts per minute per IP. | same |
+| Per-model daily caps | Models with a token quota of their own (Groq: 200,000 a day each) are capped a little under it in `server/src/ai/models.ts`; once one is used up, it is refused with a "switch models" message instead of failing at the provider. | `server/src/ai/models.ts`, `server/src/usage/meter.ts` |
 | Global daily caps | 1,500,000 AI tokens and 30 uncached web searches a day across everyone, under the providers' and Tavily's free quotas. Users see "out of free capacity for today" instead of random failures. | same |
 | Charged per AI call | Every AI call checks the budget right before it's made and records its tokens when it finishes; re-showing a saved question costs nothing. | `server/src/interview/service.ts` |
 | Hard caps per interview | At most 12 questions, 2 retries and 5 coach messages per question; answer and message length limits. | `server/src/interview/schemas.ts` |
@@ -44,6 +45,13 @@ All budgets are environment variables (see `server/.env.example`).
 - **Stored links.** Briefing source links must be http(s), including in setups sent from the browser.
 - **Dependencies.** `pnpm audit` reports no known vulnerabilities.
 
+## Watching usage
+
+`/admin` shows today's (or yesterday's) usage: what's left of the global and per-model caps, and the
+heaviest candidates and networks. It needs `ADMIN_TOKEN` (32+ random characters; the page and its API are
+off without it), sent as a bearer token and compared in constant time; any refusal is a plain 404. The
+token is kept only in that browser tab. Days are UTC, and counters are kept two days.
+
 ## Known limits
 
 - **Anonymous by design.** Someone determined, with many IPs and solved bot checks, can still use up
@@ -73,5 +81,5 @@ All budgets are environment variables (see `server/.env.example`).
    anything else. Leave optional providers unset if you don't want them offered.
 5. **Budgets:** check each provider's current free quota and set `DAILY_TOKENS` and `DAILY_SEARCHES`
    comfortably below them.
-6. **After launch:** watch the Vercel logs and the `usage_counters` collection for unusual use. If
+6. **After launch:** watch `/admin` (set `ADMIN_TOKEN` first) and the Vercel logs for unusual use. If
    needed, lower the budgets or set `MAINTENANCE_MODE=true` (both take effect on redeploy).
