@@ -1,5 +1,5 @@
 import type { ChatMessage } from "../ai/client";
-import type { CandidateProfile, Difficulty, InterviewType, RoleRequirements, Setup } from "./schemas";
+import type { CandidateProfile, Difficulty, InterviewType, RoleBriefing, RoleRequirements, Setup } from "./schemas";
 
 /** A turn as the prompts see it: only fields that exist so far. */
 export type PromptTurn = {
@@ -28,11 +28,30 @@ const DIFFICULTY_GUIDANCE: Record<Difficulty, string> = {
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
+/** The briefing as plain points (no links), or null when there is nothing in it. */
+function briefingText(briefing: RoleBriefing | null | undefined): string | null {
+  if (!briefing) return null;
+  const section = (title: string, items: { text: string }[]) =>
+    items.length ? `${title}:\n${items.map((item) => `- ${item.text}`).join("\n")}` : null;
+  const body = [
+    section("About the company", briefing.about),
+    section("Reported interview process", briefing.process),
+    section("Commonly asked questions and themes", briefing.questions),
+    section("Topics to prepare", briefing.topics),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  if (!body) return null;
+  const label = briefing.scope === "company" ? "Role briefing (from public web sources)" : "General briefing for this role (from public web sources)";
+  return `${label}:\n${body}`;
+}
+
 function interviewBrief(setup: Setup): string {
   return [
     `Candidate profile:\n${json(setup.profile)}`,
     `Role requirements:\n${json(setup.requirements)}`,
     setup.match ? `Known strengths and gaps:\n${json(setup.match)}` : null,
+    briefingText(setup.briefing),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -66,6 +85,11 @@ export function questionMessages(setup: Setup, turns: PromptTurn[]): ChatMessage
         `The interview has ${setup.length} questions in total.`,
         "Tailor every question to this candidate and this role. Never repeat an earlier question.",
         "When an earlier answer was vague or incomplete, you may make the next question a follow-up that digs into it.",
+        ...(briefingText(setup.briefing)
+          ? [
+              "About a third of your questions should draw on the commonly asked questions, themes and topics in the role briefing, adapted to this candidate rather than copied word for word. The rest should come from the resume and the role requirements.",
+            ]
+          : []),
         "Reply with the question only: one to three sentences of plain text, no preamble, no numbering, no markdown.",
         "",
         interviewBrief(setup),

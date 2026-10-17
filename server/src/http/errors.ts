@@ -2,6 +2,7 @@ import type { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import { AiUnavailableError } from "../ai/client";
 import type { ApiError, ApiErrorCode } from "../interview/schemas";
+import { SearchUnavailableError } from "../research/search";
 
 export class HttpError extends Error {
   constructor(
@@ -31,6 +32,9 @@ export function toApiError(error: unknown): { status: number; body: ApiError } {
   }
   if (error instanceof AiUnavailableError) {
     return { status: 503, body: { code: "MODEL_UNAVAILABLE", message: error.message } };
+  }
+  if (error instanceof SearchUnavailableError) {
+    return { status: 503, body: { code: "RESEARCH_UNAVAILABLE", message: `${error.message}. Try again later.` } };
   }
   console.error(error);
   return { status: 500, body: { code: "INTERNAL", message: "Something went wrong. Please try again." } };

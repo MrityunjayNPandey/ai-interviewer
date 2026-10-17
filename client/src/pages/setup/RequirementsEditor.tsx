@@ -8,7 +8,7 @@ export default function RequirementsEditor({ requirements, onChange }: Props) {
   const set = (changes: Partial<RoleRequirements>) => onChange({ ...requirements, ...changes });
 
   return (
-    <Card sx={{ height: "100%" }}>
+    <Card>
       <CardContent>
         <Stack spacing={2.5}>
           <Box>

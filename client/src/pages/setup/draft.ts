@@ -6,6 +6,7 @@ import {
   type InterviewType,
   type Match,
   type Mode,
+  type RoleBriefing,
   type RoleRequirements,
 } from "../../api/types";
 
@@ -23,6 +24,9 @@ export type Draft = {
   match: Match | null;
   /** True once the profile or requirements were edited after the match was computed. */
   matchStale: boolean;
+  briefing: RoleBriefing | null;
+  /** The title/company/seniority the briefing was researched for (see `briefingSubjectKey`). */
+  briefingFor: string | null;
   interviewType: InterviewType;
   difficulty: Difficulty;
   length: number;
@@ -41,6 +45,8 @@ export const emptyDraft: Draft = {
   requirements: null,
   match: null,
   matchStale: false,
+  briefing: null,
+  briefingFor: null,
   interviewType: "mixed",
   difficulty: "mid",
   length: DEFAULT_LENGTH,
@@ -119,4 +125,14 @@ export function cleanRequirements(requirements: RoleRequirements): RoleRequireme
     niceToHave: items(requirements.niceToHave),
     responsibilities: items(requirements.responsibilities),
   };
+}
+
+export const briefingSubjectKey = (requirements: RoleRequirements) =>
+  [requirements.title, requirements.company, requirements.seniority].map((value) => (value ?? "").trim().toLowerCase()).join("|");
+
+/** Drops sources no remaining point cites (after the candidate removed some points). */
+export function pruneBriefing(briefing: RoleBriefing): RoleBriefing {
+  const sections = [briefing.about, briefing.process, briefing.questions, briefing.topics];
+  const cited = new Set(sections.flat().flatMap((item) => item.sourceIds));
+  return { ...briefing, sources: briefing.sources.filter((source) => cited.has(source.id)) };
 }

@@ -13,12 +13,24 @@ import {
   MAX_RESUME_CHARS,
   roleRequirementsSchema,
 } from "../interview/schemas";
+import { researchRole } from "../research/briefing";
+import type { SearchClient } from "../research/search";
 import { consume, type Limits } from "../usage/limits";
 
 /** Vercel caps request bodies at 4.5 MB. */
 export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
-export function setupRouter({ ai, registry, limits }: { ai: AiClient; registry: ModelRegistry; limits: Limits }) {
+export function setupRouter({
+  ai,
+  registry,
+  limits,
+  search,
+}: {
+  ai: AiClient;
+  registry: ModelRegistry;
+  limits: Limits;
+  search: SearchClient | null;
+}) {
   const router = express.Router();
   router.use(requireCandidate);
 
@@ -81,6 +93,26 @@ export function setupRouter({ ai, registry, limits }: { ai: AiClient; registry: 
 
     const match = await ai.json(model, matchMessages(profile, requirements), matchSchema);
     res.json({ match });
+  });
+
+  /** Researches the company and role on the web. Cached for a week per company + role + seniority. */
+  router.post("/research", async (req, res) => {
+    const subject = z
+      .object({
+        title: z.string().trim().min(1, "Add the job title").max(160),
+        company: z.string().trim().max(160).nullable().transform((value) => value || null),
+        seniority: z.string().trim().max(80).nullable().transform((value) => value || null),
+        refresh: z.boolean().optional(),
+      })
+      .parse(req.body);
+    if (!search) throw new HttpError(503, "RESEARCH_UNAVAILABLE", "Web research isn't set up on this server.");
+
+    const { briefing, cached } = await researchRole({ search, ai, model: parseModel() }, subject, {
+      refresh: subject.refresh,
+      // Only a real search counts against the daily limit.
+      onMiss: () => consume(limits, "parses", usageKeys(req)),
+    });
+    res.json({ briefing, cached });
   });
 
   return router;

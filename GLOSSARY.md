@@ -36,6 +36,10 @@ _Avoid_: Parsed resume, resume data
 The structured summary extracted from a job description (must-have skills, nice-to-haves, responsibilities), reviewed and edited by the candidate before the interview starts.
 _Avoid_: Parsed JD, JD data
 
+**Role Briefing**:
+What public web sources say about the company and role (what the company does, its interview process, commonly asked questions, topics to prepare), each point linked to its source. Reviewed by the candidate before the interview; about a third of the questions draw on it. A **general** briefing covers the role alone when there is no company to research.
+_Avoid_: Research, knowledge base, intel
+
 **Match**:
 The overlap and gaps between a candidate profile and role requirements, shown before the interview starts.
 _Avoid_: Fit score, compatibility

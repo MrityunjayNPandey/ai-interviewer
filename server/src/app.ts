@@ -8,11 +8,14 @@ import type { ModelOption } from "./interview/schemas";
 import { createInterviewService } from "./interview/service";
 import { interviewsRouter } from "./routes/interviews";
 import { setupRouter } from "./routes/setup";
+import { createTavilyClient, type SearchClient } from "./research/search";
 import { DEFAULT_LIMITS, type Limits } from "./usage/limits";
 
 export type AppOptions = {
   registry?: ModelRegistry;
   ai?: AiClient;
+  /** Web search for role briefings; null disables research. */
+  search?: SearchClient | null;
   limits?: Limits;
   now?: () => Date;
   /** Skips connecting on each request (tests manage their own connection). */
@@ -23,6 +26,7 @@ export function createApp(options: AppOptions = {}) {
   const registry = options.registry ?? createModelRegistry();
   const ai = options.ai ?? createAiClient(registry);
   const limits = options.limits ?? DEFAULT_LIMITS;
+  const search = options.search === undefined ? createTavilyClient() : options.search;
   const connect = options.connect ?? connectToDatabase;
   const service = createInterviewService({ ai, registry, now: options.now });
 
@@ -56,7 +60,7 @@ export function createApp(options: AppOptions = {}) {
     await connect();
     next();
   });
-  api.use("/setup", setupRouter({ ai, registry, limits }));
+  api.use("/setup", setupRouter({ ai, registry, limits, search }));
   api.use("/interviews", interviewsRouter({ service, limits }));
   api.use(() => {
     throw new HttpError(404, "NOT_FOUND", "Not found");

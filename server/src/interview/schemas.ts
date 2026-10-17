@@ -49,6 +49,27 @@ export const matchSchema = z.object({
 });
 export type Match = z.infer<typeof matchSchema>;
 
+const briefingItemSchema = z.object({
+  text: text(400).min(1),
+  /** Ids of entries in `sources` that support this point. */
+  sourceIds: z.array(z.number().int().min(1)).min(1).max(5),
+});
+export type BriefingItem = z.infer<typeof briefingItemSchema>;
+
+export const roleBriefingSchema = z.object({
+  /** "company" when the company itself was researched; "role" for a general briefing on the role. */
+  scope: z.enum(["company", "role"]),
+  about: z.array(briefingItemSchema).max(8),
+  process: z.array(briefingItemSchema).max(8),
+  questions: z.array(briefingItemSchema).max(15),
+  topics: z.array(briefingItemSchema).max(12),
+  sources: z
+    .array(z.object({ id: z.number().int().min(1), title: text(300), url: z.string().url().max(2000) }))
+    .max(20),
+  generatedAt: z.string(),
+});
+export type RoleBriefing = z.infer<typeof roleBriefingSchema>;
+
 export const INTERVIEW_TYPES = ["behavioral", "technical", "mixed"] as const;
 export type InterviewType = (typeof INTERVIEW_TYPES)[number];
 
@@ -78,6 +99,8 @@ export const setupSchema = z.object({
   profile: candidateProfileSchema,
   requirements: roleRequirementsSchema,
   match: matchSchema.nullable(),
+  /** Optional: interviews created before briefings existed have none. */
+  briefing: roleBriefingSchema.nullable().optional(),
   interviewType: z.enum(INTERVIEW_TYPES),
   difficulty: z.enum(DIFFICULTIES),
   length: z.number().int().min(MIN_LENGTH).max(MAX_LENGTH),
@@ -177,6 +200,7 @@ export type ApiErrorCode =
   | "DAILY_LIMIT"
   | "MODEL_UNAVAILABLE"
   | "UNSUPPORTED_FILE"
+  | "RESEARCH_UNAVAILABLE"
   | "INTERNAL";
 
 export type ApiError = { code: ApiErrorCode; message: string };

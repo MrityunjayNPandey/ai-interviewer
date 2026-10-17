@@ -32,7 +32,7 @@ import {
   type Setup,
 } from "../../api/types";
 import ModelSelect from "../../components/ModelSelect";
-import { cleanProfile, cleanRequirements, type Draft } from "./draft";
+import { cleanProfile, cleanRequirements, pruneBriefing, type Draft } from "./draft";
 
 type Props = { draft: Draft; update: (changes: Partial<Draft>) => void; reset: () => void };
 
@@ -67,6 +67,7 @@ export default function SettingsStep({ draft, update, reset }: Props) {
         profile: cleanProfile(draft.profile!),
         requirements: cleanRequirements(draft.requirements!),
         match: draft.match,
+        briefing: draft.briefing ? pruneBriefing(draft.briefing) : null,
         interviewType: draft.interviewType,
         difficulty: draft.difficulty,
         length: draft.length,

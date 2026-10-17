@@ -3,6 +3,8 @@ export type {
   ApiError as ApiErrorBody,
   ApiErrorCode,
   AttemptView,
+  BriefingItem,
+  RoleBriefing,
   CoachMessageView,
   CandidateProfile,
   Difficulty,

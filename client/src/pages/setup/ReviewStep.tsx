@@ -20,6 +20,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { CandidateProfile, Match, RoleRequirements } from "../../api/types";
+import BriefingCard from "./BriefingCard";
 import { cleanProfile, cleanRequirements, type Draft } from "./draft";
 import ProfileEditor from "./ProfileEditor";
 import RequirementsEditor from "./RequirementsEditor";
@@ -116,7 +117,10 @@ export default function ReviewStep({ draft, update }: Props) {
           <ProfileEditor profile={profile} onChange={setProfile} />
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
-          <RequirementsEditor requirements={requirements} onChange={setRequirements} />
+          <Stack spacing={3}>
+            <RequirementsEditor requirements={requirements} onChange={setRequirements} />
+            <BriefingCard draft={draft} update={update} />
+          </Stack>
         </Grid>
       </Grid>
       <Stack direction="row" sx={{ justifyContent: "space-between" }}>
