@@ -21,8 +21,10 @@ vi.mock("@simplewebauthn/server", () => {
       const id = options.response.id;
       return { verified: true, registrationInfo: { credential: { id, publicKey: new Uint8Array([1, 2, 3]), counter: 0, transports: ["internal"] } } };
     },
-    verifyAuthenticationResponse: async (options: Options) => {
+    verifyAuthenticationResponse: async (options: Options & { credential: { publicKey: Uint8Array } }) => {
       await check(options);
+      // The key saved at registration must come back intact to verify the signature.
+      if (Array.from(options.credential.publicKey).join() !== "1,2,3") throw new Error("Public key didn't round-trip");
       return { verified: true, authenticationInfo: { newCounter: 1 } };
     },
   };

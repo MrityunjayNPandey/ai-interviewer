@@ -5,7 +5,8 @@ import mongoose, { Schema } from "mongoose";
 const passkeySchema = new Schema(
   {
     credentialId: { type: String, required: true },
-    publicKey: { type: Buffer, required: true },
+    /** base64url: a string reads back as stored, where a Buffer comes back from .lean() as BSON Binary. */
+    publicKey: { type: String, required: true },
     counter: { type: Number, required: true },
     transports: { type: [String], default: [] },
     createdAt: { type: Date, required: true },
@@ -27,7 +28,7 @@ candidateSchema.index({ recoveryCodeHash: 1 }, { unique: true, partialFilterExpr
 
 export type PasskeyDoc = {
   credentialId: string;
-  publicKey: Buffer;
+  publicKey: string;
   counter: number;
   transports: string[];
   createdAt: Date;

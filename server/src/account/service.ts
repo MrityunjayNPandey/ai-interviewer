@@ -20,6 +20,12 @@ const RP_NAME = "AI Interviewer";
 const passkeyFailed = () =>
   new HttpError(400, "INVALID_REQUEST", "That passkey couldn't be verified. Please try again.");
 
+/** A response that fails verification (wrong challenge, origin, signature, ...) is the candidate's problem, not a 500. */
+const unverified = (error: unknown) => {
+  console.warn("Passkey verification failed:", error instanceof Error ? error.message : error);
+  return null;
+};
+
 // Recovery codes: 20 characters from an alphabet without look-alikes (no 0/O, 1/I/L), 100 bits.
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const CODE_LENGTH = 20;
@@ -91,7 +97,7 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
         expectedOrigin: rp.origin,
         expectedRPID: rp.id,
         requireUserVerification: false,
-      }).catch(() => null);
+      }).catch(unverified);
       if (!result?.verified) throw passkeyFailed();
 
       const { credential } = result.registrationInfo;
@@ -101,7 +107,7 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
           $push: {
             passkeys: {
               credentialId: credential.id,
-              publicKey: Buffer.from(credential.publicKey),
+              publicKey: Buffer.from(credential.publicKey).toString("base64url"),
               counter: credential.counter,
               transports: credential.transports ?? [],
               createdAt: now(),
@@ -134,12 +140,12 @@ export function createAccountService({ now = () => new Date() }: { now?: () => D
         expectedRPID: rp.id,
         credential: {
           id: passkey.credentialId,
-          publicKey: new Uint8Array(passkey.publicKey),
+          publicKey: new Uint8Array(Buffer.from(passkey.publicKey, "base64url")),
           counter: passkey.counter,
           transports: passkey.transports,
         },
         requireUserVerification: false,
-      }).catch(() => null);
+      }).catch(unverified);
       if (!result?.verified) throw passkeyFailed();
 
       await CandidateModel.updateOne(
