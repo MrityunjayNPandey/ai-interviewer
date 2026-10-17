@@ -59,8 +59,12 @@ async function ensureWidget(): Promise<Widget> {
     execution: "execute",
     appearance: "interaction-only",
     callback: (token: string) => settle({ token }),
-    "error-callback": () => {
-      settle({ error: new Error("The human check failed. Please try again.") });
+    "error-callback": (code: string) => {
+      // 1102xx: this hostname isn't allowed for the site key (e.g. a production key on localhost).
+      const message = String(code).startsWith("1102")
+        ? `The human check isn't set up for ${location.hostname} (Turnstile error ${code}). Add this hostname to the Turnstile widget, or use Cloudflare's test keys locally.`
+        : `The human check failed (Turnstile error ${code}). Please try again.`;
+      settle({ error: new Error(message) });
       return true; // handled
     },
     "expired-callback": () => turnstile.reset(state.id),
