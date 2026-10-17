@@ -27,7 +27,7 @@ const steps: { icon: ReactNode; title: string; body: string }[] = [
 
 export default function HomePage() {
   return (
-    <Stack spacing={{ xs: 5, md: 8 }}>
+    <Stack spacing={{ xs: 5, md: 8 }} useFlexGap>
       <Box sx={{ textAlign: "center", maxWidth: 720, mx: "auto", pt: { md: 4 } }}>
         <Typography variant="h2" component="h1" sx={{ fontSize: { xs: "2.25rem", md: "3.25rem" }, mb: 2 }}>
           Practise the interview before it counts
