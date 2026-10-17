@@ -7,8 +7,15 @@ const PORT = Number(process.env.PORT) || 8080;
 createApp()
   .listen({ port: PORT, host: "127.0.0.1" })
   .then(() => console.log(`Server is running on http://localhost:${PORT}`))
-  .catch((error) => {
-    console.error(error);
+  .catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(
+        `Port ${PORT} is already in use, probably by another copy of the dev server.\n` +
+          `Stop it (e.g. \`lsof -ti tcp:${PORT} | xargs kill\`), or set PORT (and API_PORT for Vite) to another port.`
+      );
+    } else {
+      console.error(error);
+    }
     process.exit(1);
   });
 
