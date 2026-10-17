@@ -1,5 +1,5 @@
 import type { ChatMessage } from "../ai/client";
-import type { CandidateProfile, Difficulty, InterviewType, RoleBriefing, RoleRequirements, Setup } from "./schemas";
+import type { CandidateProfile, Difficulty, InterviewType, Match, RoleBriefing, RoleRequirements, Setup } from "./schemas";
 
 /** A turn as the prompts see it: only fields that exist so far. */
 export type PromptTurn = {
@@ -26,7 +26,55 @@ const DIFFICULTY_GUIDANCE: Record<Difficulty, string> = {
   senior: "Pitch questions at a senior level: architecture, ambiguity, leadership, and cross-team impact.",
 };
 
-const json = (value: unknown) => JSON.stringify(value, null, 2);
+// Prompts are resent on every call and their tokens count against the usage budget, so context goes
+// out as compact JSON or plain lines, and each prompt carries only the context its task needs.
+const json = (value: unknown) => JSON.stringify(value);
+
+/** Earlier answers in a question prompt are cut to this; the latest stays whole for follow-ups. */
+const EARLIER_ANSWER_CHARS = 300;
+
+const shorten = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
+const joined = (items: string[]) => (items.length ? items.join("; ") : "none listed");
+
+function profileText(profile: CandidateProfile): string {
+  const summary = [
+    profile.name,
+    profile.headline,
+    profile.yearsOfExperience !== null ? `${profile.yearsOfExperience} years of experience` : null,
+  ].filter(Boolean);
+  return [
+    "Candidate profile:",
+    summary.length ? summary.join(", ") : null,
+    `Skills: ${joined(profile.skills)}`,
+    ...(profile.experience.length ? ["Experience:"] : []),
+    ...profile.experience.map((job) => {
+      const where = [job.company && `at ${job.company}`, job.period && `(${job.period})`].filter(Boolean).join(" ");
+      return `- ${job.title}${where ? ` ${where}` : ""}${job.highlights.length ? `: ${job.highlights.join("; ")}` : ""}`;
+    }),
+    ...(profile.projects.length ? ["Projects:"] : []),
+    ...profile.projects.map((project) => `- ${project.name}${project.highlights.length ? `: ${project.highlights.join("; ")}` : ""}`),
+    profile.education.length ? `Education: ${profile.education.join("; ")}` : null,
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+}
+
+function requirementsText(requirements: RoleRequirements): string {
+  const role = [requirements.title, requirements.company && `at ${requirements.company}`, requirements.seniority && `(${requirements.seniority})`]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    "Role requirements:",
+    role,
+    `Must have: ${joined(requirements.mustHave)}`,
+    `Nice to have: ${joined(requirements.niceToHave)}`,
+    `Responsibilities: ${joined(requirements.responsibilities)}`,
+  ].join("\n");
+}
+
+function matchText(match: Match): string {
+  return [`Known strengths: ${joined(match.strengths)}`, `Known gaps: ${joined(match.gaps)}`].join("\n");
+}
 
 /** The briefing as plain points (no links), or null when there is nothing in it. */
 function briefingText(briefing: RoleBriefing | null | undefined): string | null {
@@ -46,12 +94,16 @@ function briefingText(briefing: RoleBriefing | null | undefined): string | null 
   return `${label}:\n${body}`;
 }
 
-function interviewBrief(setup: Setup): string {
+/**
+ * The interview context for a system prompt. Only question generation needs the whole profile and the
+ * web briefing; judging an answer needs the role and the known strengths and gaps.
+ */
+function interviewBrief(setup: Setup, scope: "questions" | "answers"): string {
   return [
-    `Candidate profile:\n${json(setup.profile)}`,
-    `Role requirements:\n${json(setup.requirements)}`,
-    setup.match ? `Known strengths and gaps:\n${json(setup.match)}` : null,
-    briefingText(setup.briefing),
+    scope === "questions" ? profileText(setup.profile) : null,
+    requirementsText(setup.requirements),
+    setup.match ? matchText(setup.match) : null,
+    scope === "questions" ? briefingText(setup.briefing) : null,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -66,10 +118,13 @@ function withUserMessage(messages: ChatMessage[], content: string): ChatMessage[
   return [...messages, { role: "user", content }];
 }
 
+/** Earlier questions and answers, with all but the latest answer shortened. */
 function transcriptMessages(turns: PromptTurn[]): ChatMessage[] {
-  return turns.flatMap((turn): ChatMessage[] => [
+  return turns.flatMap((turn, index): ChatMessage[] => [
     { role: "assistant", content: turn.question },
-    ...(turn.answer ? [{ role: "user" as const, content: turn.answer }] : []),
+    ...(turn.answer
+      ? [{ role: "user" as const, content: index === turns.length - 1 ? turn.answer : shorten(turn.answer, EARLIER_ANSWER_CHARS) }]
+      : []),
   ]);
 }
 
@@ -92,7 +147,7 @@ export function questionMessages(setup: Setup, turns: PromptTurn[]): ChatMessage
           : []),
         "Reply with the question only: one to three sentences of plain text, no preamble, no numbering, no markdown.",
         "",
-        interviewBrief(setup),
+        interviewBrief(setup, "questions"),
       ].join("\n"),
     },
     ...transcriptMessages(turns),
@@ -101,7 +156,7 @@ export function questionMessages(setup: Setup, turns: PromptTurn[]): ChatMessage
   return withUserMessage(messages, `(${instruction})`);
 }
 
-export function feedbackMessages(setup: Setup, turns: PromptTurn[], current: PromptTurn): ChatMessage[] {
+export function feedbackMessages(setup: Setup, current: PromptTurn): ChatMessage[] {
   const earlier = current.previousAttempts ?? [];
   const messages: ChatMessage[] = [
     {
@@ -115,12 +170,11 @@ export function feedbackMessages(setup: Setup, turns: PromptTurn[], current: Pro
         "Be specific to what they actually said. Be honest but encouraging.",
         "Reply in at most 60 words of plain text, no markdown, no headings.",
         "",
-        interviewBrief(setup),
+        interviewBrief(setup, "answers"),
       ]
         .filter((line) => line !== null)
         .join("\n"),
     },
-    ...transcriptMessages(turns),
     { role: "assistant", content: current.question },
     ...earlier.flatMap((attempt): ChatMessage[] => [
       { role: "user", content: attempt.answer },
@@ -156,7 +210,7 @@ export function coachChatMessages(
         "",
         context,
         "",
-        interviewBrief(setup),
+        interviewBrief(setup, "answers"),
       ].join("\n"),
     },
     ...chat.map((entry): ChatMessage => ({ role: entry.role === "candidate" ? "user" : "assistant", content: entry.content })),
@@ -195,7 +249,7 @@ export function reportMessages(setup: Setup, turns: PromptTurn[]): ChatMessage[]
         }),
         "Include exactly one entry in `questions` for every question in the transcript, in order. Give 1-4 improvements.",
         "",
-        interviewBrief(setup),
+        interviewBrief(setup, "answers"),
       ].join("\n"),
     },
     { role: "user", content: `Transcript:\n${json(transcript)}` },
@@ -261,6 +315,6 @@ export function matchMessages(profile: CandidateProfile, requirements: RoleRequi
         }),
       ].join("\n"),
     },
-    { role: "user", content: `Candidate profile:\n${json(profile)}\n\nRole requirements:\n${json(requirements)}` },
+    { role: "user", content: `${profileText(profile)}\n\n${requirementsText(requirements)}` },
   ];
 }

@@ -21,6 +21,55 @@ async function startInterview(candidate: ReturnType<typeof asCandidate>, overrid
   return res.body.interview.id as string;
 }
 
+describe("the context sent to the AI", () => {
+  const briefing = {
+    scope: "company" as const,
+    about: [],
+    process: [],
+    questions: [{ text: "Design an idempotent payments API.", sourceIds: [1] }],
+    topics: [],
+    sources: [{ id: 1, title: "Interviews", url: "https://example.com/interviews" }],
+    generatedAt: new Date().toISOString(),
+  };
+  const longAnswer = `I built a billing API. ${"It handled retries and idempotency keys carefully. ".repeat(12)}The end.`;
+
+  it("gives question calls the whole context, shortening all but the latest answer", async () => {
+    const { app, ai } = testApp();
+    const candidate = asCandidate(app);
+    const id = await startInterview(candidate, { briefing });
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+    await candidate.stream(`/api/interviews/${id}/answers`, { answer: longAnswer }).expect(200);
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+    await candidate.stream(`/api/interviews/${id}/answers`, { answer: longAnswer.replace("billing", "ledger") }).expect(200);
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+
+    const prompt = JSON.stringify(ai.calls.at(-1)!.messages);
+    expect(prompt).toContain("Built REST APIs");
+    expect(prompt).toContain("Design an idempotent payments API.");
+    expect(prompt).toContain("I built a billing API.");
+    expect(prompt).not.toContain(JSON.stringify(longAnswer).slice(1, -1));
+    expect(prompt).toContain(JSON.stringify(longAnswer.replace("billing", "ledger")).slice(1, -1));
+  });
+
+  it("gives feedback only the role and the current question, without the profile, briefing or earlier turns", async () => {
+    const { app, ai } = testApp();
+    const candidate = asCandidate(app);
+    const id = await startInterview(candidate, { briefing });
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+    await candidate.stream(`/api/interviews/${id}/answers`, { answer: "First answer." }).expect(200);
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+    await candidate.stream(`/api/interviews/${id}/answers`, { answer: "Second answer." }).expect(200);
+
+    const prompt = JSON.stringify(ai.calls.at(-1)!.messages);
+    expect(prompt).toContain("Second answer.");
+    expect(prompt).toContain("Distributed systems");
+    expect(prompt).not.toContain("First answer.");
+    expect(prompt).not.toContain("Question 1");
+    expect(prompt).not.toContain("Built REST APIs");
+    expect(prompt).not.toContain("Design an idempotent payments API.");
+  });
+});
+
 describe("an interview, start to finish", () => {
   it("streams questions and feedback, then writes a report", async () => {
     const { app, ai } = testApp();

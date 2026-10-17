@@ -5,7 +5,7 @@ import request from "supertest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import type { ZodType } from "zod";
 import { createApp, toNodeHandler, type AppOptions } from "../src/app";
-import { AiUnavailableError, type AiClient, type ChatMessage } from "../src/ai/client";
+import { AiUnavailableError, type AiClient, type ChatMessage, type OnTokens } from "../src/ai/client";
 import { createModelRegistry } from "../src/ai/models";
 import { DEFAULT_BUDGET, type Budget } from "../src/usage/meter";
 import type { Setup, StreamEvent } from "../src/interview/schemas";
@@ -29,8 +29,9 @@ export function useDatabase() {
 type StreamHandler = (model: string, messages: ChatMessage[]) => string | Error | Promise<string | Error>;
 type JsonHandler = (model: string, messages: ChatMessage[]) => unknown;
 
-/** A scripted AI client. Records every call; streams responses word by word. */
-export function fakeAi(handlers: { stream?: StreamHandler; json?: JsonHandler } = {}) {
+/** A scripted AI client. Records every call; streams responses word by word; each call reports `tokensPerCall` tokens. */
+export function fakeAi(handlers: { stream?: StreamHandler; json?: JsonHandler; tokensPerCall?: number } = {}) {
+  const tokensPerCall = handlers.tokensPerCall ?? 100;
   const calls: { kind: "stream" | "json"; model: string; messages: ChatMessage[] }[] = [];
   let questionCount = 0;
 
@@ -44,16 +45,18 @@ export function fakeAi(handlers: { stream?: StreamHandler; json?: JsonHandler } 
 
   const client: AiClient & { calls: typeof calls } = {
     calls,
-    async *stream(model, messages) {
+    async *stream(model, messages, onTokens) {
       calls.push({ kind: "stream", model: model.id, messages });
       const result = await (handlers.stream ?? defaultStream)(model.id, messages);
       if (result instanceof Error) throw result;
       for (const word of result.split(/(?<= )/)) yield word;
+      await onTokens?.(tokensPerCall);
     },
-    async json<T>(model: { id: string }, messages: ChatMessage[], schema: ZodType<T>) {
+    async json<T>(model: { id: string }, messages: ChatMessage[], schema: ZodType<T>, onTokens?: OnTokens) {
       calls.push({ kind: "json", model: model.id, messages });
       const value = handlers.json ? handlers.json(model.id, messages) : defaultJson(messages);
       if (value instanceof Error) throw value;
+      await onTokens?.(tokensPerCall);
       return schema.parse(value);
     },
   };

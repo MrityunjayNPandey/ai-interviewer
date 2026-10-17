@@ -39,7 +39,7 @@ Key paths:
 
 ## Getting started
 
-Requires **Node 22+** and **pnpm 10**. With nvm: `nvm use` (reads `.nvmrc`), then `corepack enable` so `pnpm` is the pinned version. `pnpm` refuses to run on older Node (`engine-strict`); to make 22 your default, `nvm alias default 22`.
+Requires **Node 24+** and **pnpm 10**. With nvm: `nvm use` (reads `.nvmrc`), then `corepack enable` so `pnpm` is the pinned version. `pnpm` refuses to run on older Node (`engine-strict`); to make 24 your default, `nvm alias default 24`.
 
 ```sh
 pnpm install
@@ -60,7 +60,7 @@ Tests never call real AI providers. The first server test run downloads a MongoD
 
 ## Deploying to Vercel
 
-1. **Import the repository** in Vercel with the **repo root** as the root directory. `vercel.json` sets the install and build commands, the output directory, the `/api` rewrite and the security headers; Node 22 comes from `engines`.
+1. **Import the repository** in Vercel with the **repo root** as the root directory. `vercel.json` sets the install and build commands, the output directory, the `/api` rewrite and the security headers; Node 24 comes from `engines`.
 2. **Environment variables** (Settings → Environment Variables, Production):
 
    | Variable | Required | Notes |
@@ -71,7 +71,7 @@ Tests never call real AI providers. The first server test run downloads a MongoD
    | `VITE_TURNSTILE_SITE_KEY` | recommended | Read at **build** time; redeploy after changing it |
    | `TAVILY_API_KEY` | optional | Role briefing |
    | `MISTRAL_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | optional | More models |
-   | `DAILY_AI_CALLS`, `DAILY_SEARCHES`, ... | optional | Budgets; defaults in `server/.env.example` |
+   | `DAILY_TOKENS`, `DAILY_SEARCHES`, ... | optional | Budgets; defaults in `server/.env.example` |
 
 3. **Before inviting users**, work through the release checklist in [docs/security.md](docs/security.md): a least-privilege Atlas user, Atlas network access, Vercel spend limits, and budgets below your providers' free quotas.
 

@@ -9,12 +9,13 @@ import { HttpError } from "../http/errors";
 export type Budget = {
   interviewsPerCandidate: number;
   interviewsPerIp: number;
-  aiCallsPerCandidate: number;
-  aiCallsPerIp: number;
-  /** Burst limit, per candidate and per IP. */
+  /** Daily AI tokens (prompt + completion) per candidate. */
+  tokensPerCandidate: number;
+  tokensPerIp: number;
+  /** Burst limit in AI calls, per candidate and per IP: providers rate-limit requests per minute. */
   aiCallsPerMinute: number;
-  /** Across all users. Groq's free tier allows ~1,000 requests a day per model. */
-  aiCallsGlobal: number;
+  /** Daily AI tokens across all users; keep it under the providers' free daily token quotas. */
+  tokensGlobal: number;
   /** Web searches across all users (cache misses only). Tavily's free tier is ~1,000 a month. */
   searchesGlobal: number;
 };
@@ -22,14 +23,14 @@ export type Budget = {
 export const DEFAULT_BUDGET: Budget = {
   interviewsPerCandidate: 5,
   interviewsPerIp: 5,
-  aiCallsPerCandidate: 120,
-  aiCallsPerIp: 200,
+  tokensPerCandidate: 150_000,
+  tokensPerIp: 300_000,
   aiCallsPerMinute: 20,
-  aiCallsGlobal: 800,
+  tokensGlobal: 1_500_000,
   searchesGlobal: 30,
 };
 
-/** Reads overrides such as DAILY_AI_CALLS=600 from the environment. */
+/** Reads overrides such as DAILY_TOKENS=2000000 from the environment. */
 export function budgetFromEnv(env: NodeJS.ProcessEnv = process.env): Budget {
   const read = (name: string, fallback: number) => {
     const raw = env[name];
@@ -39,10 +40,10 @@ export function budgetFromEnv(env: NodeJS.ProcessEnv = process.env): Budget {
   return {
     interviewsPerCandidate: read("DAILY_INTERVIEWS_PER_CANDIDATE", DEFAULT_BUDGET.interviewsPerCandidate),
     interviewsPerIp: read("DAILY_INTERVIEWS_PER_IP", DEFAULT_BUDGET.interviewsPerIp),
-    aiCallsPerCandidate: read("DAILY_AI_CALLS_PER_CANDIDATE", DEFAULT_BUDGET.aiCallsPerCandidate),
-    aiCallsPerIp: read("DAILY_AI_CALLS_PER_IP", DEFAULT_BUDGET.aiCallsPerIp),
+    tokensPerCandidate: read("DAILY_TOKENS_PER_CANDIDATE", DEFAULT_BUDGET.tokensPerCandidate),
+    tokensPerIp: read("DAILY_TOKENS_PER_IP", DEFAULT_BUDGET.tokensPerIp),
     aiCallsPerMinute: read("AI_CALLS_PER_MINUTE", DEFAULT_BUDGET.aiCallsPerMinute),
-    aiCallsGlobal: read("DAILY_AI_CALLS", DEFAULT_BUDGET.aiCallsGlobal),
+    tokensGlobal: read("DAILY_TOKENS", DEFAULT_BUDGET.tokensGlobal),
     searchesGlobal: read("DAILY_SEARCHES", DEFAULT_BUDGET.searchesGlobal),
   };
 }
@@ -64,16 +65,16 @@ type Check = { key: string; window: string; limit: number; ttlMs: number; error:
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Counts `amount` against every check, or throws the first exceeded check's error without counting.
- * (Two requests racing at the very edge can both pass; for budgets this size that's acceptable.)
- */
-async function charge(checks: Check[], amount: number, now: Date) {
-  const existing = await CounterModel.find({ $or: checks.map(({ key, window }) => ({ key, window })) }).lean();
-  for (const check of checks) {
+/** Throws the first check's error whose counter has no room for its amount. */
+async function ensureRoom(checks: { check: Check; amount: number }[]) {
+  const existing = await CounterModel.find({ $or: checks.map(({ check: { key, window } }) => ({ key, window })) }).lean();
+  for (const { check, amount } of checks) {
     const used = existing.find((counter) => counter.key === check.key && counter.window === check.window)?.count ?? 0;
     if (used + amount > check.limit) throw check.error();
   }
+}
+
+async function add(checks: Check[], amount: number, now: Date) {
   await CounterModel.bulkWrite(
     checks.map(({ key, window, ttlMs }) => ({
       updateOne: {
@@ -83,6 +84,15 @@ async function charge(checks: Check[], amount: number, now: Date) {
       },
     }))
   );
+}
+
+/**
+ * Counts `amount` against every check, or throws the first exceeded check's error without counting.
+ * (Two requests racing at the very edge can both pass; for budgets this size that's acceptable.)
+ */
+async function charge(checks: Check[], amount: number, now: Date) {
+  await ensureRoom(checks.map((check) => ({ check, amount })));
+  await add(checks, amount, now);
 }
 
 const dailyLimit = (message: string) => () => new HttpError(429, "DAILY_LIMIT", message);
@@ -97,8 +107,13 @@ const atCapacity = () =>
 export type Meter = {
   /** Counts a new interview (or practising again). */
   startInterview(): Promise<void>;
-  /** Counts AI calls before they are made. */
-  aiCalls(amount?: number): Promise<void>;
+  /**
+   * Right before AI calls: throws when a daily token budget is used up, and counts the calls against
+   * the per-minute limit. A call's tokens are known only once it finishes, so the last one may overshoot.
+   */
+  aiCalls(calls?: number): Promise<void>;
+  /** After an AI call: adds the tokens it used to the daily budgets. */
+  tokens(count: number): Promise<void>;
   /** Counts uncached web searches. */
   searches(amount: number): Promise<void>;
 };
@@ -123,6 +138,12 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
     error: slowDown,
   });
 
+  const tokenChecks = [
+    daily(`tokens:${candidate}`, budget.tokensPerCandidate, dailyLimit("You've reached today's practice limit. Come back tomorrow!")),
+    daily(`tokens:${ip}`, budget.tokensPerIp, dailyLimit("Today's practice limit for your network has been reached. Come back tomorrow!")),
+    daily("tokens:global", budget.tokensGlobal, atCapacity),
+  ];
+
   return {
     startInterview: () =>
       charge(
@@ -137,18 +158,12 @@ export function createMeter(budget: Budget, subject: { candidateId: string; ip: 
         1,
         now
       ),
-    aiCalls: (amount = 1) =>
-      charge(
-        [
-          perMinute(`ai-minute:${candidate}`),
-          perMinute(`ai-minute:${ip}`),
-          daily(`ai:${candidate}`, budget.aiCallsPerCandidate, dailyLimit("You've reached today's practice limit. Come back tomorrow!")),
-          daily(`ai:${ip}`, budget.aiCallsPerIp, dailyLimit("Today's practice limit for your network has been reached. Come back tomorrow!")),
-          daily("ai:global", budget.aiCallsGlobal, atCapacity),
-        ],
-        amount,
-        now
-      ),
+    aiCalls: async (calls = 1) => {
+      const burst = [perMinute(`ai-minute:${candidate}`), perMinute(`ai-minute:${ip}`)];
+      await ensureRoom([...burst.map((check) => ({ check, amount: calls })), ...tokenChecks.map((check) => ({ check, amount: 1 }))]);
+      await add(burst, calls, now);
+    },
+    tokens: (count) => add(tokenChecks, count, now),
     searches: (amount) => charge([daily("searches:global", budget.searchesGlobal, atCapacity)], amount, now),
   };
 }

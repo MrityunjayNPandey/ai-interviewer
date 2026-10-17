@@ -110,7 +110,7 @@ describe("POST /api/setup/parse and /match", () => {
   });
 
   it("is limited per day", async () => {
-    const { app } = testApp({ budget: budget({ aiCallsPerCandidate: 1 }) });
+    const { app } = testApp({ budget: budget({ tokensPerCandidate: 1 }) });
     const candidate = asCandidate(app);
     await candidate.post("/api/setup/match", { profile, requirements }).expect(200);
     await candidate.post("/api/setup/match", { profile, requirements }).expect(429);

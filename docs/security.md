@@ -9,10 +9,10 @@ the layers that prevent that, and what to set up before releasing it.
 | Layer | What it does | Where |
 |---|---|---|
 | Bot check | Cloudflare Turnstile token required to **Analyse**, **Start interview** and **Practise again**. Single-use, verified server-side, fails closed. | `server/src/http/botcheck.ts`, `client/src/api/botCheck.ts` |
-| Per-person daily budget | AI calls: 120 per candidate, 200 per IP. Interviews: 5 per candidate, 5 per IP. | `server/src/usage/meter.ts` |
+| Per-person daily budget | AI tokens: 150,000 per candidate, 300,000 per IP, as reported by the provider (estimated at four characters a token when it doesn't report usage). Interviews: 5 per candidate, 5 per IP. | `server/src/usage/meter.ts` |
 | Burst limit | 20 AI calls per minute, per candidate and per IP. | same |
-| Global daily caps | 800 AI calls and 30 uncached web searches a day across everyone, under Groq's and Tavily's free quotas. Users see "out of free capacity for today" instead of random failures. | same |
-| Charged per AI call | Every AI call is counted right before it's made; re-showing a saved question costs nothing. | `server/src/interview/service.ts` |
+| Global daily caps | 1,500,000 AI tokens and 30 uncached web searches a day across everyone, under the providers' and Tavily's free quotas. Users see "out of free capacity for today" instead of random failures. | same |
+| Charged per AI call | Every AI call checks the budget right before it's made and records its tokens when it finishes; re-showing a saved question costs nothing. | `server/src/interview/service.ts` |
 | Hard caps per interview | At most 12 questions, 2 retries and 5 coach messages per question; answer and message length limits. | `server/src/interview/schemas.ts` |
 | Shared research cache | Briefings are cached 7 days per company + role + seniority, for everyone. | `server/src/research/briefing.ts` |
 | Maintenance switch | `MAINTENANCE_MODE=true` pauses new work without a deploy; interviews in progress finish. | `server/src/http/security.ts` |
@@ -65,7 +65,7 @@ All budgets are environment variables (see `server/.env.example`).
    **Spend Management** with a hard limit, so a traffic spike can never produce a bill.
 4. **Provider keys:** use keys created only for this app, so they can be revoked without breaking
    anything else. Leave optional providers unset if you don't want them offered.
-5. **Budgets:** check each provider's current free quota and set `DAILY_AI_CALLS` and `DAILY_SEARCHES`
+5. **Budgets:** check each provider's current free quota and set `DAILY_TOKENS` and `DAILY_SEARCHES`
    comfortably below them.
 6. **After launch:** watch the Vercel logs and the `usage_counters` collection for unusual use. If
    needed, lower the budgets or set `MAINTENANCE_MODE=true` (both take effect on redeploy).

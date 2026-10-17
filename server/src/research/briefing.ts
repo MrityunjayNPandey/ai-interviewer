@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import { z } from "zod";
-import type { AiClient, ChatMessage } from "../ai/client";
+import type { AiClient, ChatMessage, OnTokens } from "../ai/client";
 import type { ModelConfig } from "../ai/models";
 import type { BriefingItem, RoleBriefing } from "../interview/schemas";
 import type { SearchClient, SearchResult } from "./search";
@@ -134,7 +134,7 @@ export function assembleBriefing(
 export async function researchRole(
   deps: { search: SearchClient; ai: AiClient; model: ModelConfig; now?: () => Date },
   subject: BriefingSubject,
-  options: { refresh?: boolean; onMiss?: (searchCount: number) => Promise<void> } = {}
+  options: { refresh?: boolean; onMiss?: (searchCount: number) => Promise<void>; onTokens?: OnTokens } = {}
 ): Promise<{ briefing: RoleBriefing; cached: boolean }> {
   const now = deps.now?.() ?? new Date();
   const key = cacheKey(subject);
@@ -157,7 +157,7 @@ export async function researchRole(
     .map((result, index) => ({ ...result, id: index + 1, content: result.content.slice(0, MAX_SOURCE_CHARS) }));
 
   const draft = sources.length
-    ? await deps.ai.json(deps.model, briefingMessages(subject, sources), draftSchema)
+    ? await deps.ai.json(deps.model, briefingMessages(subject, sources), draftSchema, options.onTokens)
     : { about: [], process: [], questions: [], topics: [] };
   const briefing = assembleBriefing(subject, draft, sources, now);
 

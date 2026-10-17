@@ -87,11 +87,12 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       })
       .parse(req.body);
     const model = parseModel();
-    await meter(req).aiCalls(2);
+    const usage = meter(req);
+    await usage.aiCalls(2);
 
     const [profile, requirements] = await Promise.all([
-      ai.json(model, profileMessages(resumeText), candidateProfileSchema),
-      ai.json(model, requirementsMessages(jobDescription), roleRequirementsSchema),
+      ai.json(model, profileMessages(resumeText), candidateProfileSchema, usage.tokens),
+      ai.json(model, requirementsMessages(jobDescription), roleRequirementsSchema, usage.tokens),
     ]);
     return { profile, requirements };
   });
@@ -101,9 +102,10 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       .object({ profile: candidateProfileSchema, requirements: roleRequirementsSchema })
       .parse(req.body);
     const model = parseModel();
-    await meter(req).aiCalls(1);
+    const usage = meter(req);
+    await usage.aiCalls(1);
 
-    const match = await ai.json(model, matchMessages(profile, requirements), matchSchema);
+    const match = await ai.json(model, matchMessages(profile, requirements), matchSchema, usage.tokens);
     return { match };
   });
 
@@ -119,14 +121,15 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
       .parse(req.body);
     if (!search) throw new HttpError(503, "RESEARCH_UNAVAILABLE", "Web research isn't set up on this server.");
 
+    const usage = meter(req);
     const { briefing, cached } = await researchRole({ search, ai, model: parseModel() }, subject, {
       refresh: subject.refresh,
       // Only a real search counts against the limits.
       onMiss: async (searchCount) => {
-        const usage = meter(req);
         await usage.searches(searchCount);
         await usage.aiCalls(1);
       },
+      onTokens: usage.tokens,
     });
     return { briefing, cached };
   });

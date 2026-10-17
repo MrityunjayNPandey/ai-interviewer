@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { AiUnavailableError, type AiClient } from "../ai/client";
 import type { ModelConfig, ModelRegistry } from "../ai/models";
 import { conflict, HttpError, notFound } from "../http/errors";
+import type { Meter } from "../usage/meter";
 import { InterviewModel, type InterviewDoc, type TurnDoc } from "./model";
 import { coachChatMessages, feedbackMessages, questionMessages, reportMessages, type PromptTurn } from "./prompts";
 import {
@@ -24,8 +25,11 @@ export type Deps = {
 };
 
 type OnDelta = (text: string) => void;
-/** Counts one AI call against the usage budget; throws when it's exhausted. Called right before each call. */
-export type Charge = () => Promise<void>;
+/**
+ * The usage budget for one request: `aiCalls()` right before each AI call throws when it's exhausted,
+ * and `tokens` receives what each call used.
+ */
+export type Charge = Pick<Meter, "aiCalls" | "tokens">;
 
 const isAsked = (turn: TurnDoc): turn is TurnDoc & { question: string } => turn.question !== null;
 
@@ -105,11 +109,10 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
     return text.trim();
   }
 
-  async function generateFeedback(doc: InterviewDoc, index: number, onDelta?: OnDelta): Promise<InterviewDoc> {
+  async function generateFeedback(doc: InterviewDoc, index: number, charge: Charge, onDelta?: OnDelta): Promise<InterviewDoc> {
     const model = modelFor(doc);
-    const turns = doc.turns as PromptTurn[];
-    const turn = turns[index]!;
-    const feedback = await collect(ai.stream(model, feedbackMessages(doc.setup, turns.slice(0, index), turn)), onDelta);
+    const turn = doc.turns[index] as PromptTurn;
+    const feedback = await collect(ai.stream(model, feedbackMessages(doc.setup, turn), charge.tokens), onDelta);
     if (!feedback) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
 
     const updated = await InterviewModel.findOneAndUpdate(
@@ -182,7 +185,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
           throw conflict("The next question is already being generated");
         }
         index = turns.length - 1;
-        await charge();
+        await charge.aiCalls();
         const reclaimed = await InterviewModel.updateOne(
           { _id: doc._id, [`turns.${index}.questionStartedAt`]: last.questionStartedAt },
           { $set: { [`turns.${index}.questionStartedAt`]: current } }
@@ -190,7 +193,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         if (!reclaimed.modifiedCount) throw conflict("The next question is already being generated");
       } else {
         if (turns.length >= doc.setup.length) throw conflict("All questions have been answered. End the interview to see your report.");
-        await charge();
+        await charge.aiCalls();
         // Reserve the slot atomically so concurrent requests can't both add a question.
         const reserved = await InterviewModel.updateOne(
           { _id: doc._id, status: "in_progress", turns: { $size: turns.length } },
@@ -201,7 +204,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
 
       try {
         const asked = turns.slice(0, index) as PromptTurn[];
-        const question = await collect(ai.stream(model, questionMessages(doc.setup, asked)), onDelta);
+        const question = await collect(ai.stream(model, questionMessages(doc.setup, asked), charge.tokens), onDelta);
         if (!question) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
 
         const updated = await InterviewModel.findOneAndUpdate(
@@ -230,7 +233,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last || !isAsked(last) || last.answer) throw conflict("There is no question waiting for an answer");
-      await charge(); // for the feedback
+      await charge.aiCalls(); // for the feedback
 
       const updated = await InterviewModel.findOneAndUpdate(
         {
@@ -248,13 +251,13 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
 
       if (updated.setup.mode === "mock") {
         try {
-          return await generateFeedback(updated, index);
+          return await generateFeedback(updated, index, charge);
         } catch (error) {
           if (error instanceof AiUnavailableError) return updated; // The report still covers this answer.
           throw error;
         }
       }
-      return generateFeedback(updated, index, onDelta);
+      return generateFeedback(updated, index, charge, onDelta);
     },
 
     /** Retries feedback for the latest answer after a failure. */
@@ -263,8 +266,8 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last?.answer || last.feedback) throw conflict("There is no answer waiting for feedback");
-      await charge();
-      return generateFeedback(doc, index, doc.setup.mode === "coach" ? onDelta : undefined);
+      await charge.aiCalls();
+      return generateFeedback(doc, index, charge, doc.setup.mode === "coach" ? onDelta : undefined);
     },
 
     /**
@@ -308,7 +311,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         throw conflict(`You can ask the coach up to ${MAX_COACH_MESSAGES} questions per interview question`);
       }
 
-      await charge();
+      await charge.aiCalls();
       const attempt = (turn.previousAttempts ?? []).length;
       // Reserve: append the candidate's message only if nobody else did meanwhile (one reply at a time).
       const path = `turns.${index}.coachMessages`;
@@ -322,7 +325,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
 
       const model = modelFor(doc);
       try {
-        const reply = await collect(ai.stream(model, coachChatMessages(doc.setup, turn, chat, message)), onDelta);
+        const reply = await collect(ai.stream(model, coachChatMessages(doc.setup, turn, chat, message), charge.tokens), onDelta);
         if (!reply) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
         const updated = await InterviewModel.findOneAndUpdate(
           { _id: doc._id, [`turns.${index}.coachMessages`]: { $size: chat.length + 1 } },
@@ -352,8 +355,8 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       if (!answered.length) throw conflict("Answer at least one question before ending the interview");
 
       const model = modelFor(doc);
-      await charge();
-      const report = normalizeReport(await ai.json(model, reportMessages(doc.setup, answered), reportSchema), answered.length);
+      await charge.aiCalls();
+      const report = normalizeReport(await ai.json(model, reportMessages(doc.setup, answered), reportSchema, charge.tokens), answered.length);
 
       const updated = await InterviewModel.findOneAndUpdate(
         { _id: doc._id, status: "in_progress" },

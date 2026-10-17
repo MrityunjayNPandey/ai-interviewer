@@ -22,7 +22,6 @@ export const interviewRoutes: FastifyPluginAsync<InterviewRoutesOptions> = async
   { service, budget, verifyHuman, now = () => new Date() }
 ) => {
   const meter = (req: FastifyRequest) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
-  const charge = (req: FastifyRequest) => () => meter(req).aiCalls(1);
   /** New work: paused in maintenance, and only for humans. */
   const startsWork = { preHandler: [pauseNewWork(), requireHuman(verifyHuman)] };
 
@@ -61,7 +60,7 @@ export const interviewRoutes: FastifyPluginAsync<InterviewRoutesOptions> = async
 
   app.post<WithId>("/:id/questions", async (req, reply) => {
     await streamNdjson(reply, async (onDelta) =>
-      toView(await service.nextQuestion(candidateId(req), req.params.id, onDelta, charge(req)))
+      toView(await service.nextQuestion(candidateId(req), req.params.id, onDelta, meter(req)))
     );
     return reply;
   });
@@ -71,14 +70,14 @@ export const interviewRoutes: FastifyPluginAsync<InterviewRoutesOptions> = async
       .object({ answer: z.string().trim().min(1, "Write an answer first").max(MAX_ANSWER_CHARS) })
       .parse(req.body);
     await streamNdjson(reply, async (onDelta) =>
-      toView(await service.answer(candidateId(req), req.params.id, answer, onDelta, charge(req)))
+      toView(await service.answer(candidateId(req), req.params.id, answer, onDelta, meter(req)))
     );
     return reply;
   });
 
   app.post<WithId>("/:id/feedback", async (req, reply) => {
     await streamNdjson(reply, async (onDelta) =>
-      toView(await service.retryFeedback(candidateId(req), req.params.id, onDelta, charge(req)))
+      toView(await service.retryFeedback(candidateId(req), req.params.id, onDelta, meter(req)))
     );
     return reply;
   });
@@ -92,12 +91,12 @@ export const interviewRoutes: FastifyPluginAsync<InterviewRoutesOptions> = async
       .object({ message: z.string().trim().min(1, "Write a message first").max(MAX_COACH_MESSAGE_CHARS) })
       .parse(req.body);
     await streamNdjson(reply, async (onDelta) =>
-      toView(await service.askCoach(candidateId(req), req.params.id, message, onDelta, charge(req)))
+      toView(await service.askCoach(candidateId(req), req.params.id, message, onDelta, meter(req)))
     );
     return reply;
   });
 
   app.post<WithId>("/:id/end", async (req) => ({
-    interview: toView(await service.end(candidateId(req), req.params.id, charge(req))),
+    interview: toView(await service.end(candidateId(req), req.params.id, meter(req))),
   }));
 };

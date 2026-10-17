@@ -33,7 +33,7 @@ describe("POST /api/setup/research", () => {
 
   it("serves repeat requests from the cache, for any candidate, without counting against the limit", async () => {
     const search = fakeSearch();
-    const { app, ai } = testApp({ search, budget: budget({ aiCallsPerCandidate: 1, searchesGlobal: 3 }) });
+    const { app, ai } = testApp({ search, budget: budget({ tokensPerCandidate: 1, searchesGlobal: 3 }) });
     await asCandidate(app).post("/api/setup/research", subject).expect(200);
     const again = await asCandidate(app).post("/api/setup/research", { ...subject, title: " senior backend ENGINEER " }).expect(200);
 

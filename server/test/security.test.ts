@@ -47,8 +47,9 @@ describe("bot check", () => {
 });
 
 describe("AI usage budget", () => {
-  it("caps AI calls across everyone, with a capacity message", async () => {
-    const { app } = testApp({ budget: budget({ aiCallsGlobal: 2 }) });
+  it("caps AI tokens across everyone, with a capacity message", async () => {
+    // The fake AI reports 100 tokens a call: two calls fit under 150, a third doesn't.
+    const { app } = testApp({ budget: budget({ tokensGlobal: 150 }) });
     const first = asCandidate(app);
     const id = await startInterview(first);
     await first.stream(`/api/interviews/${id}/questions`).expect(200);
@@ -60,8 +61,8 @@ describe("AI usage budget", () => {
     expect(JSON.parse(res.body)).toMatchObject({ code: "CAPACITY" });
   });
 
-  it("caps each candidate's AI calls per day", async () => {
-    const { app } = testApp({ budget: budget({ aiCallsPerCandidate: 2 }) });
+  it("caps each candidate's AI tokens per day, counting what each call reports", async () => {
+    const { app } = testApp({ ai: fakeAi({ tokensPerCall: 100 }), budget: budget({ tokensPerCandidate: 150 }) });
     const candidate = asCandidate(app);
     const id = await startInterview(candidate);
     await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
@@ -86,7 +87,7 @@ describe("AI usage budget", () => {
   });
 
   it("doesn't charge for re-showing a question that's already waiting", async () => {
-    const { app } = testApp({ budget: budget({ aiCallsPerCandidate: 1 }) });
+    const { app } = testApp({ budget: budget({ tokensPerCandidate: 1 }) });
     const candidate = asCandidate(app);
     const id = await startInterview(candidate);
     await candidate.stream(`/api/interviews/${id}/questions`).expect(200);

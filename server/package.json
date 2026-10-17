@@ -20,7 +20,7 @@
     "zod": "^3.25.30"
   },
   "devDependencies": {
-    "@types/node": "^22.15.21",
+    "@types/node": "^24.0.0",
     "@types/supertest": "^6.0.3",
     "mongodb-memory-server": "^10.4.3",
     "supertest": "^7.3.1",

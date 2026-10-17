@@ -4,12 +4,15 @@ import type { ModelConfig, ModelRegistry, ProviderId } from "./models";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/** Receives the tokens (prompt + completion) each provider call used. */
+export type OnTokens = (count: number) => Promise<void>;
+
 /** The only seam between the app and AI providers; tests substitute a scripted fake. */
 export interface AiClient {
-  /** Streams a plain-text completion, yielding text deltas. */
-  stream(model: ModelConfig, messages: ChatMessage[]): AsyncIterable<string>;
-  /** Returns a JSON completion validated against `schema`. */
-  json<T>(model: ModelConfig, messages: ChatMessage[], schema: ZodType<T>): Promise<T>;
+  /** Streams a plain-text completion, yielding text deltas. Reports its tokens once the stream ends. */
+  stream(model: ModelConfig, messages: ChatMessage[], onTokens?: OnTokens): AsyncIterable<string>;
+  /** Returns a JSON completion validated against `schema`. Reports the tokens of each provider call. */
+  json<T>(model: ModelConfig, messages: ChatMessage[], schema: ZodType<T>, onTokens?: OnTokens): Promise<T>;
 }
 
 /** The provider failed, rate-limited us, or returned unusable output. The candidate can retry or switch models. */
@@ -40,6 +43,12 @@ function extractJson(content: string): unknown {
   return JSON.parse(fenced?.[1] ?? trimmed);
 }
 
+/** For providers that don't report usage: roughly four characters per token. */
+export function estimateTokens(messages: ChatMessage[], output: string): number {
+  const chars = messages.reduce((sum, message) => sum + message.content.length, 0) + output.length;
+  return Math.ceil(chars / 4);
+}
+
 export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv = process.env): AiClient {
   const clients = new Map<ProviderId, OpenAI>();
 
@@ -59,7 +68,9 @@ export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv =
   };
 
   return {
-    async *stream(model, messages) {
+    async *stream(model, messages, onTokens) {
+      let text = "";
+      let reported: number | undefined;
       try {
         const stream = await clientFor(model).chat.completions.create({
           ...model.params,
@@ -67,21 +78,28 @@ export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv =
           messages,
           temperature: 0.7,
           stream: true,
+          stream_options: { include_usage: true },
         });
         for await (const chunk of stream) {
+          if (chunk.usage) reported = chunk.usage.total_tokens;
           const delta = chunk.choices[0]?.delta?.content;
-          if (delta) yield delta;
+          if (delta) {
+            text += delta;
+            yield delta;
+          }
         }
       } catch (error) {
         throw describeFailure(model, error);
       }
+      await onTokens?.(reported ?? estimateTokens(messages, text));
     },
 
-    async json(model, messages, schema) {
+    async json(model, messages, schema, onTokens) {
       let attempt: ChatMessage[] = messages;
       // One repair round: if the output doesn't validate, show the model its mistake.
       for (let round = 0; round < 2; round++) {
         let content: string;
+        let reported: number | undefined;
         try {
           const response = await clientFor(model).chat.completions.create({
             ...model.params,
@@ -91,9 +109,11 @@ export function createAiClient(registry: ModelRegistry, env: NodeJS.ProcessEnv =
             response_format: { type: "json_object" },
           });
           content = response.choices[0]?.message?.content ?? "";
+          reported = response.usage?.total_tokens;
         } catch (error) {
           throw describeFailure(model, error);
         }
+        await onTokens?.(reported ?? estimateTokens(attempt, content));
 
         let problem: string;
         try {
