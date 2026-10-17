@@ -1,5 +1,7 @@
+import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createAccountService } from "./account/service";
 import { createAiClient, type AiClient } from "./ai/client";
 import { createModelRegistry, type ModelRegistry } from "./ai/models";
 import { connectToDatabase } from "./db/mongo-client";
@@ -8,6 +10,7 @@ import { errorHandler } from "./http/errors";
 import { apiSecurityHeaders } from "./http/security";
 import type { ModelOption } from "./interview/schemas";
 import { createInterviewService } from "./interview/service";
+import { accountRoutes } from "./routes/account";
 import { interviewRoutes } from "./routes/interviews";
 import { setupRoutes } from "./routes/setup";
 import { createTavilyClient, type SearchClient } from "./research/search";
@@ -34,10 +37,12 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   const search = options.search === undefined ? createTavilyClient() : options.search;
   const connect = options.connect ?? connectToDatabase;
   const service = createInterviewService({ ai, registry, now: options.now });
+  const account = createAccountService({ now: options.now });
 
   // No CORS: the site and the API share one origin, so other sites' pages can't call the API.
   // trustProxy stays off: the client IP is read from Vercel's own header (see clientIp).
   const app = Fastify({ bodyLimit: 200 * 1024 });
+  app.register(cookie);
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({ code: "NOT_FOUND", message: "Not found" });
@@ -70,6 +75,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
         });
         db.register(setupRoutes, { prefix: "/setup", ai, registry, budget, search, verifyHuman, now: options.now });
         db.register(interviewRoutes, { prefix: "/interviews", service, budget, verifyHuman, now: options.now });
+        db.register(accountRoutes, { prefix: "/account", account, verifyHuman });
       });
     },
     { prefix: "/api" }

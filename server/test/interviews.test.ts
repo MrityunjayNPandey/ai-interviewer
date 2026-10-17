@@ -362,12 +362,6 @@ describe("candidates", () => {
     expect((await stranger.get("/api/interviews")).body.interviews).toEqual([]);
   });
 
-  it("must identify themselves", async () => {
-    const { app } = testApp();
-    await request(app).get("/api/interviews").expect(400);
-    await request(app).get("/api/interviews").set("X-Candidate-Id", "not-a-uuid").expect(400);
-  });
-
   it("can delete an interview", async () => {
     const { app } = testApp();
     const candidate = asCandidate(app);

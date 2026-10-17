@@ -19,7 +19,9 @@ export async function streamNdjson(
       started = true;
       // Take the response over from Fastify; from here on we write to the socket directly.
       reply.hijack();
+      const cookie = reply.getHeader("set-cookie"); // e.g. a new browser's candidate cookie
       raw.writeHead(200, {
+        ...(cookie === undefined ? {} : { "Set-Cookie": cookie as string | string[] }),
         ...API_SECURITY_HEADERS,
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",

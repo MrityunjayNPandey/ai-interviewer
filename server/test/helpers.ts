@@ -147,11 +147,11 @@ export function setupFixture(overrides: Partial<Setup> = {}): Setup {
   };
 }
 
-/** A supertest agent that sends a fixed candidate id. */
+/** A supertest agent for one browser: sends a fixed candidate cookie. */
 export type TestApp = ReturnType<typeof toNodeHandler>;
 
 export function asCandidate(app: TestApp, id = randomUUID()) {
-  const withId = (test: request.Test) => test.set("X-Candidate-Id", id);
+  const withId = (test: request.Test) => test.set("Cookie", `candidate=${id}`);
   return {
     id,
     get: (url: string) => withId(request(app).get(url)),

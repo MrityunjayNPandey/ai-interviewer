@@ -1,10 +1,15 @@
-import type { FastifyRequest } from "fastify";
-import { HttpError } from "./errors";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { randomUUID } from "node:crypto";
 
-// Candidates are anonymous: the browser generates a random UUID once and sends it on every request.
+// Candidates are anonymous: the server gives each browser a random UUID in an HttpOnly cookie,
+// so page scripts can't read it. Saving it with a passkey or recovery code is how history follows them.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const CANDIDATE_HEADER = "x-candidate-id";
+export const CANDIDATE_COOKIE = "candidate";
+/** Before the cookie, browsers kept the id in localStorage and sent it here; adopted once, then ignored. */
+export const LEGACY_CANDIDATE_HEADER = "x-candidate-id";
+
+const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60; // the longest browsers allow
 
 const candidates = new WeakMap<FastifyRequest, string>();
 
@@ -13,13 +18,37 @@ export const header = (request: FastifyRequest, name: string) => {
   return Array.isArray(value) ? value[0] : value;
 };
 
-/** preHandler hook: rejects requests without a valid candidate id. */
-export async function requireCandidate(request: FastifyRequest) {
-  const id = header(request, CANDIDATE_HEADER);
-  if (!id || !UUID.test(id)) {
-    throw new HttpError(400, "INVALID_REQUEST", `Missing or invalid ${CANDIDATE_HEADER} header`);
+const valid = (id: string | undefined): id is string => !!id && UUID.test(id);
+
+// Set as a plain header rather than with reply.setCookie, which only writes cookies when Fastify
+// sends the reply: streamed replies bypass that, and copy the reply's headers instead (see ndjson.ts).
+const writeCookie = (reply: FastifyReply, value: string, maxAge: number) =>
+  reply.header(
+    "set-cookie",
+    reply.server.serializeCookie(CANDIDATE_COOKIE, value, {
+      path: "/api",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: !!process.env.VERCEL, // local development is plain http
+      maxAge,
+    })
+  );
+
+export const setCandidateCookie = (reply: FastifyReply, id: string) => writeCookie(reply, id, COOKIE_MAX_AGE_S);
+
+export const clearCandidateCookie = (reply: FastifyReply) => writeCookie(reply, "", 0);
+
+/** preHandler hook: identifies the candidate, giving a new browser an id. */
+export async function requireCandidate(request: FastifyRequest, reply: FastifyReply) {
+  const cookie = request.cookies[CANDIDATE_COOKIE];
+  if (valid(cookie)) {
+    candidates.set(request, cookie.toLowerCase());
+    return;
   }
-  candidates.set(request, id.toLowerCase());
+  const legacy = header(request, LEGACY_CANDIDATE_HEADER);
+  const id = valid(legacy) ? legacy.toLowerCase() : randomUUID();
+  setCandidateCookie(reply, id);
+  candidates.set(request, id);
 }
 
 export function candidateId(request: FastifyRequest): string {
