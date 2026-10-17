@@ -18,6 +18,13 @@ A system that conducts AI-powered interviews by analyzing resumes and job descri
 - **Server**: Node.js backend with MongoDB
 - **AI Integration**: GPT-based question generation
 
+## Documentation
+
+- [Decisions](docs/decisions.md): every product and technical decision, and why
+- [Decision records](docs/adr/): the bigger, harder-to-reverse choices in more depth
+- [Security](docs/security.md): abuse protection, known limits, and the release checklist
+- [Glossary](GLOSSARY.md): the domain vocabulary used in code and docs
+
 ## Getting Started
 
 Requires Node 22+ (`nvm use`) and pnpm (`corepack enable`).
