@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState, type DragEvent } from "react";
+import { botCheckHeaders } from "../../api/botCheck";
 import { api } from "../../api/client";
 import { MAX_PDF_BYTES, type CandidateProfile, type Match, type RoleRequirements } from "../../api/types";
 import type { Draft } from "./draft";
@@ -36,10 +37,11 @@ export default function MaterialsStep({ draft, update }: Props) {
 
   const analyze = useMutation({
     mutationFn: async () => {
-      const parsed = await api.post<{ profile: CandidateProfile; requirements: RoleRequirements }>("/setup/parse", {
-        resumeText: draft.resumeText,
-        jobDescription: draft.jobDescription,
-      });
+      const parsed = await api.post<{ profile: CandidateProfile; requirements: RoleRequirements }>(
+        "/setup/parse",
+        { resumeText: draft.resumeText, jobDescription: draft.jobDescription },
+        await botCheckHeaders()
+      );
       // The match is a nice-to-have: if it fails, the review step offers a retry.
       const match = await api
         .post<{ match: Match }>("/setup/match", parsed)

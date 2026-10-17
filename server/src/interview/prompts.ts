@@ -150,6 +150,7 @@ export function coachChatMessages(
         "The candidate has questions about your feedback on their answer. Answer them directly and concretely:",
         "explain the reasoning, give examples, and when asked, show what a strong answer could sound like for this candidate.",
         "Stay on this interview question and how to answer it well. Reply in at most 150 words of plain text, no markdown headings.",
+        "If the candidate asks for anything unrelated to preparing for this interview (essays, code for other projects, general chat), decline in one sentence and steer back to the question.",
         "",
         `The interview question:\n${turn.question}`,
         "",

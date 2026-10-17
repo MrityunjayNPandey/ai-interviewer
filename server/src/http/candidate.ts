@@ -23,7 +23,15 @@ export function candidateId(req: Request): string {
   return id;
 }
 
-/** Keys a request is rate-limited by: the candidate and their IP. */
-export function usageKeys(req: Request): string[] {
-  return [`candidate:${candidateId(req)}`, `ip:${req.ip ?? "unknown"}`];
+/**
+ * The client's IP. On Vercel, x-vercel-forwarded-for is set by Vercel itself and can't be spoofed;
+ * elsewhere (local dev) we use the socket address and ignore client-supplied forwarding headers.
+ */
+export function clientIp(req: Request): string {
+  if (process.env.VERCEL) {
+    const forwarded = req.get("x-vercel-forwarded-for") ?? req.get("x-real-ip");
+    const first = forwarded?.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress ?? "unknown";
 }

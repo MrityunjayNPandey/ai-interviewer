@@ -2,7 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { createModelRegistry } from "../src/ai/models";
-import { asCandidate, fakeAi, match, profile, requirements, testApp, useDatabase } from "./helpers";
+import { asCandidate, budget, fakeAi, match, profile, requirements, testApp, useDatabase } from "./helpers";
 
 useDatabase();
 
@@ -110,7 +110,7 @@ describe("POST /api/setup/parse and /match", () => {
   });
 
   it("is limited per day", async () => {
-    const { app } = testApp({ limits: { interviews: 5, parses: 1 } });
+    const { app } = testApp({ budget: budget({ aiCallsPerCandidate: 1 }) });
     const candidate = asCandidate(app);
     await candidate.post("/api/setup/match", { profile, requirements }).expect(200);
     await candidate.post("/api/setup/match", { profile, requirements }).expect(429);

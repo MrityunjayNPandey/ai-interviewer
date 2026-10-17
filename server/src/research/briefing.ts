@@ -131,7 +131,7 @@ export function assembleBriefing(
 export async function researchRole(
   deps: { search: SearchClient; ai: AiClient; model: ModelConfig; now?: () => Date },
   subject: BriefingSubject,
-  options: { refresh?: boolean; onMiss?: () => Promise<void> } = {}
+  options: { refresh?: boolean; onMiss?: (searchCount: number) => Promise<void> } = {}
 ): Promise<{ briefing: RoleBriefing; cached: boolean }> {
   const now = deps.now?.() ?? new Date();
   const key = cacheKey(subject);
@@ -140,9 +140,10 @@ export async function researchRole(
     const hit = await CacheModel.findOne({ key, expiresAt: { $gt: now } }).lean();
     if (hit) return { briefing: hit.briefing as RoleBriefing, cached: true };
   }
-  await options.onMiss?.();
+  const queries = searchQueries(subject);
+  await options.onMiss?.(queries.length);
 
-  const results = await Promise.all(searchQueries(subject).map((query) => deps.search.search(query)));
+  const results = await Promise.all(queries.map((query) => deps.search.search(query)));
   const seen = new Set<string>();
   const sources = results
     .flat()

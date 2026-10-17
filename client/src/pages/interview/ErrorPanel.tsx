@@ -15,14 +15,25 @@ type Props = {
 
 /** Shows a failed step with a retry button and, when the model is the problem, a model switcher. */
 export default function ErrorPanel({ error, currentModelId, onRetry, onSwitchModel, busy }: Props) {
-  const modelProblem = error instanceof ApiError && error.code === "MODEL_UNAVAILABLE";
+  const code = error instanceof ApiError ? error.code : null;
+  const modelProblem = code === "MODEL_UNAVAILABLE";
+  const title =
+    code === "MODEL_UNAVAILABLE"
+      ? "The model is busy"
+      : code === "CAPACITY"
+        ? "Out of free capacity for today"
+        : code === "DAILY_LIMIT"
+          ? "Daily limit reached"
+          : code === "RATE_LIMITED"
+            ? "Slow down a little"
+            : "Something went wrong";
   const models = useModels();
   const alternatives = models.data?.filter((model) => model.id !== currentModelId) ?? [];
   const [choice, setChoice] = useState("");
 
   return (
     <Alert severity={modelProblem ? "warning" : "error"} sx={{ "& .MuiAlert-message": { width: "100%" } }}>
-      <AlertTitle>{modelProblem ? "The model is busy" : "Something went wrong"}</AlertTitle>
+      <AlertTitle>{title}</AlertTitle>
       {error.message}
       <Stack spacing={1.5} sx={{ mt: 1.5 }}>
         <Box>

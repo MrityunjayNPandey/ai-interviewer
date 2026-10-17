@@ -1,22 +1,25 @@
-import cors from "cors";
 import express from "express";
 import { createAiClient, type AiClient } from "./ai/client";
 import { createModelRegistry, type ModelRegistry } from "./ai/models";
 import { connectToDatabase } from "./db/mongo-client";
+import { createTurnstileVerifier, type VerifyHuman } from "./http/botcheck";
 import { errorHandler, HttpError } from "./http/errors";
+import { apiSecurityHeaders } from "./http/security";
 import type { ModelOption } from "./interview/schemas";
 import { createInterviewService } from "./interview/service";
 import { interviewsRouter } from "./routes/interviews";
 import { setupRouter } from "./routes/setup";
 import { createTavilyClient, type SearchClient } from "./research/search";
-import { DEFAULT_LIMITS, type Limits } from "./usage/limits";
+import { budgetFromEnv, type Budget } from "./usage/meter";
 
 export type AppOptions = {
   registry?: ModelRegistry;
   ai?: AiClient;
   /** Web search for role briefings; null disables research. */
   search?: SearchClient | null;
-  limits?: Limits;
+  budget?: Budget;
+  /** Bot check for starting new work; null disables it. Defaults to Turnstile when configured. */
+  verifyHuman?: VerifyHuman | null;
   now?: () => Date;
   /** Skips connecting on each request (tests manage their own connection). */
   connect?: () => Promise<unknown>;
@@ -25,15 +28,16 @@ export type AppOptions = {
 export function createApp(options: AppOptions = {}) {
   const registry = options.registry ?? createModelRegistry();
   const ai = options.ai ?? createAiClient(registry);
-  const limits = options.limits ?? DEFAULT_LIMITS;
+  const budget = options.budget ?? budgetFromEnv();
+  const verifyHuman = options.verifyHuman === undefined ? createTurnstileVerifier() : options.verifyHuman;
   const search = options.search === undefined ? createTavilyClient() : options.search;
   const connect = options.connect ?? connectToDatabase;
   const service = createInterviewService({ ai, registry, now: options.now });
 
   const app = express();
-  // On Vercel the client IP arrives in X-Forwarded-For; rate limits key on it.
-  if (process.env.VERCEL) app.set("trust proxy", true);
-  app.use(cors());
+  app.disable("x-powered-by");
+  // No CORS: the site and the API share one origin, so other sites' pages can't call the API.
+  app.use(apiSecurityHeaders);
   app.use(express.json({ limit: "200kb" }));
 
   const api = express.Router();
@@ -60,8 +64,8 @@ export function createApp(options: AppOptions = {}) {
     await connect();
     next();
   });
-  api.use("/setup", setupRouter({ ai, registry, limits, search }));
-  api.use("/interviews", interviewsRouter({ service, limits }));
+  api.use("/setup", setupRouter({ ai, registry, budget, search, verifyHuman, now: options.now }));
+  api.use("/interviews", interviewsRouter({ service, budget, verifyHuman, now: options.now }));
   api.use(() => {
     throw new HttpError(404, "NOT_FOUND", "Not found");
   });

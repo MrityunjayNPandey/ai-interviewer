@@ -17,6 +17,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { botCheckHeaders } from "../../api/botCheck";
 import { api } from "../../api/client";
 import { rememberInterview, useModels } from "../../api/queries";
 import {
@@ -60,7 +61,7 @@ export default function SettingsStep({ draft, update, reset }: Props) {
   const modelId = models.data?.some((model) => model.id === draft.modelId) ? draft.modelId! : defaultModel?.id;
 
   const start = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const setup: Setup = {
         resumeText: draft.resumeText,
         jobDescription: draft.jobDescription,
@@ -74,7 +75,7 @@ export default function SettingsStep({ draft, update, reset }: Props) {
         mode: draft.mode,
         modelId: modelId!,
       };
-      return api.post<{ interview: InterviewView }>("/interviews", setup);
+      return api.post<{ interview: InterviewView }>("/interviews", setup, await botCheckHeaders());
     },
     onSuccess: ({ interview }) => {
       rememberInterview(queryClient, interview);

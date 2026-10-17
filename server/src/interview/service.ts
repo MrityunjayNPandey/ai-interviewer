@@ -24,6 +24,8 @@ export type Deps = {
 };
 
 type OnDelta = (text: string) => void;
+/** Counts one AI call against the usage budget; throws when it's exhausted. Called right before each call. */
+export type Charge = () => Promise<void>;
 
 const isAsked = (turn: TurnDoc): turn is TurnDoc & { question: string } => turn.question !== null;
 
@@ -163,7 +165,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
      * Asks the next question, streaming it through `onDelta`. If a question is already waiting for
      * an answer (e.g. after a page refresh), returns it without generating a new one.
      */
-    async nextQuestion(candidateId: string, id: string, onDelta: OnDelta): Promise<InterviewDoc> {
+    async nextQuestion(candidateId: string, id: string, onDelta: OnDelta, charge: Charge): Promise<InterviewDoc> {
       const doc = await loadInProgress(candidateId, id);
       const turns = doc.turns;
       const last = turns.at(-1);
@@ -180,6 +182,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
           throw conflict("The next question is already being generated");
         }
         index = turns.length - 1;
+        await charge();
         const reclaimed = await InterviewModel.updateOne(
           { _id: doc._id, [`turns.${index}.questionStartedAt`]: last.questionStartedAt },
           { $set: { [`turns.${index}.questionStartedAt`]: current } }
@@ -187,6 +190,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         if (!reclaimed.modifiedCount) throw conflict("The next question is already being generated");
       } else {
         if (turns.length >= doc.setup.length) throw conflict("All questions have been answered. End the interview to see your report.");
+        await charge();
         // Reserve the slot atomically so concurrent requests can't both add a question.
         const reserved = await InterviewModel.updateOne(
           { _id: doc._id, status: "in_progress", turns: { $size: turns.length } },
@@ -221,11 +225,12 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
      * Saves the answer to the waiting question, then generates feedback. In coach mode the feedback
      * streams through `onDelta`; in mock mode it is generated silently and a failure doesn't block the interview.
      */
-    async answer(candidateId: string, id: string, answer: string, onDelta: OnDelta): Promise<InterviewDoc> {
+    async answer(candidateId: string, id: string, answer: string, onDelta: OnDelta, charge: Charge): Promise<InterviewDoc> {
       const doc = await loadInProgress(candidateId, id);
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last || !isAsked(last) || last.answer) throw conflict("There is no question waiting for an answer");
+      await charge(); // for the feedback
 
       const updated = await InterviewModel.findOneAndUpdate(
         {
@@ -253,11 +258,12 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
     },
 
     /** Retries feedback for the latest answer after a failure. */
-    async retryFeedback(candidateId: string, id: string, onDelta: OnDelta): Promise<InterviewDoc> {
+    async retryFeedback(candidateId: string, id: string, onDelta: OnDelta, charge: Charge): Promise<InterviewDoc> {
       const doc = await loadInProgress(candidateId, id);
       const index = doc.turns.length - 1;
       const last = doc.turns[index];
       if (!last?.answer || last.feedback) throw conflict("There is no answer waiting for feedback");
+      await charge();
       return generateFeedback(doc, index, doc.setup.mode === "coach" ? onDelta : undefined);
     },
 
@@ -289,7 +295,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
     },
 
     /** Coach mode: answers the candidate's question about the feedback on the latest answer, streaming the reply. */
-    async askCoach(candidateId: string, id: string, message: string, onDelta: OnDelta): Promise<InterviewDoc> {
+    async askCoach(candidateId: string, id: string, message: string, onDelta: OnDelta, charge: Charge): Promise<InterviewDoc> {
       const doc = await loadInProgress(candidateId, id);
       if (doc.setup.mode !== "coach") throw conflict("The coach chat is only available in coach mode");
       const index = doc.turns.length - 1;
@@ -302,6 +308,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
         throw conflict(`You can ask the coach up to ${MAX_COACH_MESSAGES} questions per interview question`);
       }
 
+      await charge();
       const attempt = (turn.previousAttempts ?? []).length;
       // Reserve: append the candidate's message only if nobody else did meanwhile (one reply at a time).
       const path = `turns.${index}.coachMessages`;
@@ -335,7 +342,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
     },
 
     /** Ends the interview and writes the report, covering only the answered questions. */
-    async end(candidateId: string, id: string): Promise<InterviewDoc> {
+    async end(candidateId: string, id: string, charge: Charge): Promise<InterviewDoc> {
       const doc = await load(candidateId, id);
       if (doc.status === "completed") return doc;
 
@@ -345,6 +352,7 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       if (!answered.length) throw conflict("Answer at least one question before ending the interview");
 
       const model = modelFor(doc);
+      await charge();
       const report = normalizeReport(await ai.json(model, reportMessages(doc.setup, answered), reportSchema), answered.length);
 
       const updated = await InterviewModel.findOneAndUpdate(

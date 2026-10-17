@@ -56,9 +56,9 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   return response;
 }
 
-const json = (body: unknown): RequestInit => ({
+const json = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: { "Content-Type": "application/json", ...headers },
   body: JSON.stringify(body),
 });
 
@@ -66,8 +66,8 @@ export const api = {
   async get<T>(path: string): Promise<T> {
     return (await send(path)).json() as Promise<T>;
   },
-  async post<T>(path: string, body: unknown = {}): Promise<T> {
-    return (await send(path, json(body))).json() as Promise<T>;
+  async post<T>(path: string, body: unknown = {}, headers: Record<string, string> = {}): Promise<T> {
+    return (await send(path, json(body, headers))).json() as Promise<T>;
   },
   async put<T>(path: string, body: unknown): Promise<T> {
     return (await send(path, { ...json(body), method: "PUT" })).json() as Promise<T>;

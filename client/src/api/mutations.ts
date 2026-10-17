@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { botCheckHeaders } from "./botCheck";
 import { api } from "./client";
 import { queryKeys, rememberInterview } from "./queries";
 import type { InterviewView } from "./types";
@@ -9,7 +10,8 @@ export function usePractiseAgain() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
-    mutationFn: (id: string) => api.post<{ interview: InterviewView }>(`/interviews/${id}/retake`).then((res) => res.interview),
+    mutationFn: async (id: string) =>
+      (await api.post<{ interview: InterviewView }>(`/interviews/${id}/retake`, {}, await botCheckHeaders())).interview,
     onSuccess: (interview) => {
       rememberInterview(queryClient, interview);
       navigate(`/interviews/${interview.id}`);

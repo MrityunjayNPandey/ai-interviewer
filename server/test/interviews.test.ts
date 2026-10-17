@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeReport } from "../src/interview/service";
 import {
   asCandidate,
+  budget,
   doneEvent,
   fakeAi,
   parseEvents,
@@ -398,7 +399,7 @@ describe("daily limits", () => {
   });
 
   it("also limits by IP, across candidates", async () => {
-    const { app } = testApp({ limits: { interviews: 2, parses: 30 } });
+    const { app } = testApp({ budget: budget({ interviewsPerIp: 2 }) });
     await startInterview(asCandidate(app));
     await startInterview(asCandidate(app));
 
