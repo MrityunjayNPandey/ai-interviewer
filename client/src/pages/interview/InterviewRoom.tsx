@@ -1,4 +1,5 @@
 import FlagRounded from "@mui/icons-material/FlagRounded";
+import ReplayRounded from "@mui/icons-material/ReplayRounded";
 import SendRounded from "@mui/icons-material/SendRounded";
 import {
   Alert,
@@ -26,13 +27,16 @@ import {
   DIFFICULTY_LABELS,
   INTERVIEW_TYPE_LABELS,
   MAX_ANSWER_CHARS,
+  MAX_COACH_MESSAGE_CHARS,
+  MAX_COACH_MESSAGES,
+  MAX_RETRIES,
   MODE_LABELS,
   type InterviewView,
 } from "../../api/types";
 import ErrorPanel from "./ErrorPanel";
-import { AnswerBubble, Caret, FeedbackBubble, QuestionBubble } from "./Transcript";
+import { AnswerBubble, Caret, CoachQuestionBubble, FeedbackBubble, QuestionBubble, TurnTranscript } from "./Transcript";
 
-type Action = "question" | "answer" | "feedback" | "end";
+type Action = "question" | "answer" | "feedback" | "coach" | "retry" | "end";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const isConflict = (error: unknown) => error instanceof ApiError && error.code === "CONFLICT";
@@ -73,7 +77,8 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
   const models = useModels();
   const { id, setup, turns } = interview;
   const last = turns.at(-1);
-  const answeredCount = turns.filter((turn) => turn.answer).length;
+  // A question reopened for another attempt still counts: its earlier attempt stands until replaced.
+  const answeredCount = turns.filter((turn) => turn.answer || turn.previousAttempts.length).length;
   const coach = setup.mode === "coach";
 
   const [busy, setBusy] = useState<Action | null>(null);
@@ -81,12 +86,17 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
   const [sentAnswer, setSentAnswer] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ action: Action; error: Error } | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [coachDraft, setCoachDraft] = useState("");
+  const [sentCoachMessage, setSentCoachMessage] = useState<string | null>(null);
   const [answer, setAnswer] = useAnswerDraft(`ai-interviewer.answer.${id}.${turns.length}`);
   const bottom = useRef<HTMLDivElement>(null);
 
   const waitingForAnswer = Boolean(last && !last.answer);
   const allAnswered = turns.length >= setup.length && Boolean(last?.answer);
   const feedbackMissing = coach && Boolean(last?.answer) && !last?.feedback;
+  const coachQuestionsLeft = MAX_COACH_MESSAGES - (last?.coachMessages.filter((m) => m.role === "candidate").length ?? 0);
+  const retriesLeft = MAX_RETRIES - (last?.previousAttempts.length ?? 0);
+  const canCoach = coach && Boolean(last?.answer && last.feedback);
   const modelLabel = models.data?.find((model) => model.id === setup.modelId)?.label ?? setup.modelId;
 
   const save = useCallback((next: InterviewView) => rememberInterview(queryClient, next), [queryClient]);
@@ -142,6 +152,19 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
 
   const retryFeedback = () => run("feedback", (onDelta) => api.stream(`/interviews/${id}/feedback`, {}, onDelta));
 
+  const askCoach = async (message = coachDraft.trim()) => {
+    if (!message) return;
+    setSentCoachMessage(message);
+    const next = await run("coach", (onDelta) => api.stream(`/interviews/${id}/coach`, { message }, onDelta));
+    if (next) {
+      setSentCoachMessage(null);
+      setCoachDraft("");
+    }
+  };
+
+  const answerAgain = () =>
+    run("retry", async () => (await api.post<{ interview: InterviewView }>(`/interviews/${id}/retry`)).interview);
+
   const end = () => {
     setConfirmEnd(false);
     void run("end", async () => (await api.post<{ interview: InterviewView }>(`/interviews/${id}/end`)).interview);
@@ -151,6 +174,8 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
     if (action === "question") void askQuestion();
     else if (action === "answer") void submitAnswer();
     else if (action === "feedback") void retryFeedback();
+    else if (action === "coach") void askCoach(sentCoachMessage ?? undefined);
+    else if (action === "retry") void answerAgain();
     else end();
   };
 
@@ -184,7 +209,7 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
   const streaming = streamText.length > 0;
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns.length, streaming, busy, sentAnswer]);
+  }, [turns.length, streaming, busy, sentAnswer, last?.coachMessages.length]);
 
   // The question on screen: the one streaming in, the one waiting for an answer, or the last one answered.
   const currentNumber = busy === "question" ? turns.length + 1 : waitingForAnswer ? turns.length : answeredCount;
@@ -233,11 +258,7 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
 
       <Stack spacing={2.5} aria-live="polite">
         {turns.map((turn) => (
-          <Stack key={turn.index} spacing={2}>
-            <QuestionBubble index={turn.index}>{turn.question}</QuestionBubble>
-            {turn.answer && <AnswerBubble>{turn.answer}</AnswerBubble>}
-            {coach && turn.feedback && <FeedbackBubble>{turn.feedback}</FeedbackBubble>}
-          </Stack>
+          <TurnTranscript key={turn.index} turn={turn} showCoaching={coach} />
         ))}
 
         {busy === "question" && (
@@ -246,7 +267,20 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
             <Caret />
           </QuestionBubble>
         )}
-        {busy === "answer" && sentAnswer && <AnswerBubble>{sentAnswer}</AnswerBubble>}
+        {busy === "answer" && sentAnswer && (
+          <AnswerBubble label={last?.previousAttempts.length ? `You · Attempt ${last.previousAttempts.length + 1}` : "You"}>
+            {sentAnswer}
+          </AnswerBubble>
+        )}
+        {busy === "coach" && sentCoachMessage && (
+          <>
+            <CoachQuestionBubble>{sentCoachMessage}</CoachQuestionBubble>
+            <FeedbackBubble>
+              {streamText || "Thinking…"}
+              <Caret />
+            </FeedbackBubble>
+          </>
+        )}
         {(busy === "answer" || busy === "feedback") && coach && (
           <FeedbackBubble>
             {streamText || "Reviewing your answer…"}
@@ -294,7 +328,11 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
               onKeyDown={(event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void submitAnswer();
               }}
-              placeholder="Answer as you would out loud. Specific examples and results make the strongest answers."
+              placeholder={
+                last?.previousAttempts.length
+                  ? "Try again, using the feedback. Your best attempt counts in the report."
+                  : "Answer as you would out loud. Specific examples and results make the strongest answers."
+              }
               autoFocus
             />
             <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mt: 1.5 }}>
@@ -309,10 +347,60 @@ export default function InterviewRoom({ interview }: { interview: InterviewView 
         </Card>
       )}
 
+      {canCoach && !busy && (
+        <Card variant="outlined" sx={{ borderColor: "secondary.main" }}>
+          <CardContent>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Ask the coach about this feedback
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "flex-start" } }}>
+              <TextField
+                size="small"
+                multiline
+                maxRows={6}
+                value={coachDraft}
+                disabled={coachQuestionsLeft <= 0}
+                onChange={(event) => setCoachDraft(event.target.value.slice(0, MAX_COACH_MESSAGE_CHARS))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void askCoach();
+                  }
+                }}
+                placeholder={
+                  coachQuestionsLeft > 0
+                    ? "e.g. What would a strong answer sound like?"
+                    : "You've used all your coach questions for this one"
+                }
+                slotProps={{ htmlInput: { "aria-label": "Message to the coach" } }}
+              />
+              <Button
+                variant="outlined"
+                color="secondary"
+                endIcon={<SendRounded />}
+                disabled={!coachDraft.trim() || coachQuestionsLeft <= 0}
+                onClick={() => void askCoach()}
+                sx={{ flexShrink: 0 }}
+              >
+                Ask
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+              {coachQuestionsLeft} of {MAX_COACH_MESSAGES} questions left. The interviewer doesn't see this chat, and it isn't scored.
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+
       {!busy && !failure && !waitingForAnswer && last?.answer && (
-        <Stack direction="row" spacing={2} sx={{ justifyContent: "center" }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "center", alignItems: "center" }}>
           {feedbackMissing && (
             <Button onClick={() => void retryFeedback()}>Get feedback on this answer</Button>
+          )}
+          {coach && retriesLeft > 0 && (
+            <Button variant="outlined" size="large" startIcon={<ReplayRounded />} onClick={() => void answerAgain()}>
+              Try answering again ({retriesLeft} left)
+            </Button>
           )}
           {allAnswered ? (
             <Button variant="contained" size="large" onClick={end}>

@@ -2,7 +2,7 @@ import express from "express";
 import { z } from "zod";
 import { candidateId, requireCandidate, usageKeys } from "../http/candidate";
 import { streamNdjson } from "../http/ndjson";
-import { MAX_ANSWER_CHARS, setupSchema } from "../interview/schemas";
+import { MAX_ANSWER_CHARS, MAX_COACH_MESSAGE_CHARS, setupSchema } from "../interview/schemas";
 import { toSummary, toView, type InterviewService } from "../interview/service";
 import { consume, type Limits } from "../usage/limits";
 
@@ -62,6 +62,21 @@ export function interviewsRouter({ service, limits }: { service: InterviewServic
   router.post("/:id/feedback", async (req, res) => {
     await streamNdjson(res, async (onDelta) =>
       toView(await service.retryFeedback(candidateId(req), req.params.id, onDelta))
+    );
+  });
+
+  /** Coach mode: answer the latest question again. */
+  router.post("/:id/retry", async (req, res) => {
+    res.json({ interview: toView(await service.retry(candidateId(req), req.params.id)) });
+  });
+
+  /** Coach mode: ask the coach about the feedback on the latest answer. */
+  router.post("/:id/coach", async (req, res) => {
+    const { message } = z
+      .object({ message: z.string().trim().min(1, "Write a message first").max(MAX_COACH_MESSAGE_CHARS) })
+      .parse(req.body);
+    await streamNdjson(res, async (onDelta) =>
+      toView(await service.askCoach(candidateId(req), req.params.id, message, onDelta))
     );
   });
 

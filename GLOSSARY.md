@@ -14,6 +14,10 @@ _Avoid_: User, applicant, interviewee
 The AI persona that asks the questions. Never a human.
 _Avoid_: GPT, bot, assistant
 
+**Coach**:
+The AI persona that gives feedback and answers coach chat. Played by the same model as the interviewer, but kept apart: the interviewer never sees what the coach said.
+_Avoid_: Interviewer (when meaning feedback), tutor
+
 ### Setting up
 
 **Resume**:
@@ -59,18 +63,26 @@ One practice session: a setup, a sequence of turns, and (once finished) a report
 _Avoid_: Session, context, conversation
 
 **Turn**:
-One question, the candidate's answer to it, and the feedback on that answer.
+One question, the candidate's attempts at answering it, the feedback on each, and any coach chat.
 _Avoid_: Message, exchange
 
 **Question**:
 What the interviewer asks in a turn; may follow up on earlier answers.
 
 **Answer**:
-The candidate's response to a question.
+The candidate's response to a question. A turn's answer is its latest attempt.
+
+**Attempt**:
+One answer to a question. In coach mode the candidate may retry a question after its feedback (up to two retries); the report scores the best attempt.
+_Avoid_: Try, submission
 
 **Feedback**:
-The interviewer's short assessment of a single answer.
+The coach's short assessment of a single attempt.
 _Avoid_: Verdict, review
+
+**Coach Chat**:
+A short conversation in which the candidate asks the coach about feedback on an answer. Coach mode only; never seen by the interviewer and never scored.
+_Avoid_: Follow-up (that is the interviewer's job), conversation
 
 **Report**:
 The structured assessment of a whole interview, produced when it ends: overall score, per-question scores, strengths, and gaps with ways to improve.

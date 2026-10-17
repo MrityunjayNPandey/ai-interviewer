@@ -2,6 +2,8 @@
 export type {
   ApiError as ApiErrorBody,
   ApiErrorCode,
+  AttemptView,
+  CoachMessageView,
   CandidateProfile,
   Difficulty,
   InterviewStatus,
@@ -26,6 +28,9 @@ export const MAX_LENGTH = 12;
 export const DEFAULT_LENGTH = 6;
 export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 export const MAX_ANSWER_CHARS = 6000;
+export const MAX_RETRIES = 2;
+export const MAX_COACH_MESSAGES = 5;
+export const MAX_COACH_MESSAGE_CHARS = 1000;
 
 export const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
   mixed: "Mixed",

@@ -2,7 +2,14 @@ import type { ChatMessage } from "../ai/client";
 import type { CandidateProfile, Difficulty, InterviewType, RoleRequirements, Setup } from "./schemas";
 
 /** A turn as the prompts see it: only fields that exist so far. */
-export type PromptTurn = { question: string; answer?: string | null; feedback?: string | null };
+export type PromptTurn = {
+  question: string;
+  answer?: string | null;
+  feedback?: string | null;
+  previousAttempts?: { answer: string; feedback: string | null }[];
+};
+
+export type PromptCoachMessage = { role: "candidate" | "coach"; content: string };
 
 const TYPE_GUIDANCE: Record<InterviewType, string> = {
   behavioral:
@@ -71,23 +78,65 @@ export function questionMessages(setup: Setup, turns: PromptTurn[]): ChatMessage
 }
 
 export function feedbackMessages(setup: Setup, turns: PromptTurn[], current: PromptTurn): ChatMessage[] {
+  const earlier = current.previousAttempts ?? [];
   const messages: ChatMessage[] = [
     {
       role: "system",
       content: [
         `You are an interview coach. The candidate is practising for the role of ${setup.requirements.title} (${setup.difficulty} level).`,
         "Give feedback on the candidate's latest answer only: what worked, and the single most important way to improve it.",
+        earlier.length
+          ? `This is attempt ${earlier.length + 1} at this question. Say briefly whether it improved on the earlier attempt and how.`
+          : null,
         "Be specific to what they actually said. Be honest but encouraging.",
         "Reply in at most 60 words of plain text, no markdown, no headings.",
         "",
         interviewBrief(setup),
-      ].join("\n"),
+      ]
+        .filter((line) => line !== null)
+        .join("\n"),
     },
     ...transcriptMessages(turns),
     { role: "assistant", content: current.question },
+    ...earlier.flatMap((attempt): ChatMessage[] => [
+      { role: "user", content: attempt.answer },
+      { role: "assistant", content: `(Feedback on that attempt: ${attempt.feedback ?? "none"}) Try again.` },
+    ]),
     { role: "user", content: current.answer ?? "" },
   ];
   return withUserMessage(messages, "(Give me feedback on that answer.)");
+}
+
+/** The coach answering the candidate's questions about one turn. Never shown to the interviewer. */
+export function coachChatMessages(
+  setup: Setup,
+  turn: PromptTurn,
+  chat: PromptCoachMessage[],
+  message: string
+): ChatMessage[] {
+  const attempts = [...(turn.previousAttempts ?? []), { answer: turn.answer ?? "", feedback: turn.feedback ?? null }];
+  const context = attempts
+    .map((attempt, index) => `Attempt ${index + 1}:\n${attempt.answer}\n\nYour feedback:\n${attempt.feedback ?? "(none)"}`)
+    .join("\n\n");
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: [
+        `You are an interview coach helping a candidate practise for the role of ${setup.requirements.title} (${setup.difficulty} level).`,
+        "The candidate has questions about your feedback on their answer. Answer them directly and concretely:",
+        "explain the reasoning, give examples, and when asked, show what a strong answer could sound like for this candidate.",
+        "Stay on this interview question and how to answer it well. Reply in at most 150 words of plain text, no markdown headings.",
+        "",
+        `The interview question:\n${turn.question}`,
+        "",
+        context,
+        "",
+        interviewBrief(setup),
+      ].join("\n"),
+    },
+    ...chat.map((entry): ChatMessage => ({ role: entry.role === "candidate" ? "user" : "assistant", content: entry.content })),
+  ];
+  return withUserMessage(messages, message);
 }
 
 export function reportMessages(setup: Setup, turns: PromptTurn[]): ChatMessage[] {
@@ -95,6 +144,7 @@ export function reportMessages(setup: Setup, turns: PromptTurn[]): ChatMessage[]
     index,
     question: turn.question,
     answer: turn.answer,
+    ...(turn.previousAttempts?.length ? { earlierAttempts: turn.previousAttempts.map((attempt) => attempt.answer) } : {}),
   }));
   return [
     {
@@ -102,6 +152,7 @@ export function reportMessages(setup: Setup, turns: PromptTurn[]): ChatMessage[]
       content: [
         `You are an interview coach writing the end-of-interview report for a candidate practising for the role of ${setup.requirements.title} (${setup.difficulty} level, ${setup.interviewType} interview).`,
         "Score fairly against what the role requires. 10 is an outstanding answer, 5 is adequate, 0 is no real answer.",
+        "Some questions have earlierAttempts: the candidate retried after feedback. Score the best attempt, and mention the improvement in the note.",
         "Reply with a JSON object of exactly this shape:",
         json({
           overallScore: "number 0-10 (may use one decimal)",

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { normalizeReport } from "../src/interview/service";
@@ -232,6 +233,119 @@ describe("when a model fails", () => {
     // The slot was released, so the candidate can simply retry.
     const saved = await candidate.get(`/api/interviews/${id}`).expect(200);
     expect(saved.body.interview.turns).toEqual([]);
+  });
+});
+
+describe("coach mode: retries and coach chat", () => {
+  async function answeredInterview(app: Parameters<typeof asCandidate>[0], overrides = {}) {
+    const candidate = asCandidate(app);
+    const id = await startInterview(candidate, overrides);
+    await candidate.stream(`/api/interviews/${id}/questions`);
+    await candidate.stream(`/api/interviews/${id}/answers`, { answer: "First try." }).expect(200);
+    return { candidate, id };
+  }
+
+  it("lets the candidate answer a question again, keeping earlier attempts", async () => {
+    const { app, ai } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+
+    const reopened = await candidate.post(`/api/interviews/${id}/retry`).expect(200);
+    expect(reopened.body.interview.turns[0]).toMatchObject({
+      answer: null,
+      feedback: null,
+      previousAttempts: [{ answer: "First try.", feedback: "Good structure. Add a concrete metric next time." }],
+    });
+
+    const answered = await candidate.stream(`/api/interviews/${id}/answers`, { answer: "Better try." }).expect(200);
+    expect(doneEvent(answered.body).turns[0]).toMatchObject({ answer: "Better try.", feedback: expect.any(String) });
+    // The feedback compares against the earlier attempt.
+    const feedbackCall = ai.calls.at(-1)!;
+    expect(feedbackCall.messages[0]!.content).toContain("attempt 2");
+    expect(feedbackCall.messages.some((message) => message.content === "First try.")).toBe(true);
+  });
+
+  it("allows two retries per question", async () => {
+    const { app } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+    for (const answer of ["Second.", "Third."]) {
+      await candidate.post(`/api/interviews/${id}/retry`).expect(200);
+      await candidate.stream(`/api/interviews/${id}/answers`, { answer }).expect(200);
+    }
+    await candidate.post(`/api/interviews/${id}/retry`).expect(409);
+  });
+
+  it("sends every attempt to the report, and falls back to the last attempt if a retry was never answered", async () => {
+    const { app, ai } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+    await candidate.post(`/api/interviews/${id}/retry`).expect(200);
+
+    const ended = await candidate.post(`/api/interviews/${id}/end`).expect(200);
+    expect(ended.body.interview.turns[0]).toMatchObject({ answer: "First try.", previousAttempts: [] });
+    expect(ended.body.interview.report.questions).toHaveLength(1);
+    expect(ai.calls.at(-1)!.kind).toBe("json");
+  });
+
+  it("answers questions about the feedback, without showing them to the interviewer", async () => {
+    const { app, ai } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+
+    const chatted = await candidate.stream(`/api/interviews/${id}/coach`, { message: "What metric would you add?" }).expect(200);
+    expect(doneEvent(chatted.body).turns[0]!.coachMessages).toEqual([
+      { role: "candidate", content: "What metric would you add?", attempt: 0 },
+      { role: "coach", content: expect.stringContaining("What metric would you add?"), attempt: 0 },
+    ]);
+    const coachCall = ai.calls.at(-1)!;
+    expect(coachCall.messages[0]!.content).toContain("First try.");
+    expect(coachCall.messages[0]!.content).toContain("Good structure.");
+
+    await candidate.stream(`/api/interviews/${id}/questions`).expect(200);
+    const questionCall = ai.calls.at(-1)!;
+    expect(JSON.stringify(questionCall.messages)).not.toContain("What metric would you add?");
+  });
+
+  it("limits the coach chat to 5 questions per interview question", async () => {
+    const { app } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+    for (let i = 0; i < 5; i++) {
+      await candidate.stream(`/api/interviews/${id}/coach`, { message: `Question ${i}` }).expect(200);
+    }
+    await candidate.stream(`/api/interviews/${id}/coach`, { message: "One more" }).expect(409);
+  });
+
+  it("doesn't count a coach message whose reply failed", async () => {
+    let fail = true;
+    const ai = fakeAi({
+      stream: (model, messages) => {
+        if (messages[0]!.content.includes("questions about your feedback")) return fail ? unavailable(model) : "Coach reply";
+        return messages.at(-1)!.content.includes("Give me feedback") ? "Feedback." : "A question?";
+      },
+    });
+    const { app } = testApp({ ai });
+    const { candidate, id } = await answeredInterview(app);
+
+    await candidate.stream(`/api/interviews/${id}/coach`, { message: "Why?" }).expect(503);
+    fail = false;
+    const retried = await candidate.stream(`/api/interviews/${id}/coach`, { message: "Why?" }).expect(200);
+    expect(doneEvent(retried.body).turns[0]!.coachMessages).toHaveLength(2);
+  });
+
+  it("works on interviews saved before retries and coach chat existed", async () => {
+    const { app } = testApp();
+    const { candidate, id } = await answeredInterview(app);
+    await mongoose.connection
+      .collection("practice_interviews")
+      .updateOne({}, { $unset: { "turns.0.coachMessages": "", "turns.0.previousAttempts": "" } });
+
+    await candidate.stream(`/api/interviews/${id}/coach`, { message: "Why?" }).expect(200);
+    await candidate.post(`/api/interviews/${id}/retry`).expect(200);
+  });
+
+  it("is not available in mock mode", async () => {
+    const { app } = testApp();
+    const { candidate, id } = await answeredInterview(app, { mode: "mock" });
+
+    await candidate.post(`/api/interviews/${id}/retry`).expect(409);
+    await candidate.stream(`/api/interviews/${id}/coach`, { message: "Why?" }).expect(409);
   });
 });
 

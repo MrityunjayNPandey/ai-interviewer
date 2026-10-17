@@ -35,6 +35,7 @@ export function fakeAi(handlers: { stream?: StreamHandler; json?: JsonHandler } 
 
   const defaultStream: StreamHandler = (_model, messages) => {
     const last = messages.at(-1)?.content ?? "";
+    if (messages[0]?.content.includes("questions about your feedback")) return `Coach reply to: ${last}`;
     if (last.includes("Give me feedback")) return "Good structure. Add a concrete metric next time.";
     questionCount++;
     return `Question ${questionCount}: tell me about a project you are proud of.`;

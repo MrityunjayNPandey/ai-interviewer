@@ -3,8 +3,16 @@ import { AiUnavailableError, type AiClient } from "../ai/client";
 import type { ModelConfig, ModelRegistry } from "../ai/models";
 import { conflict, HttpError, notFound } from "../http/errors";
 import { InterviewModel, type InterviewDoc, type TurnDoc } from "./model";
-import { feedbackMessages, questionMessages, reportMessages, type PromptTurn } from "./prompts";
-import { reportSchema, type InterviewSummary, type InterviewView, type Report, type Setup } from "./schemas";
+import { coachChatMessages, feedbackMessages, questionMessages, reportMessages, type PromptTurn } from "./prompts";
+import {
+  MAX_COACH_MESSAGES,
+  MAX_RETRIES,
+  reportSchema,
+  type InterviewSummary,
+  type InterviewView,
+  type Report,
+  type Setup,
+} from "./schemas";
 
 /** A question still "generating" after this long is assumed abandoned (crashed or timed-out function). */
 const STALE_QUESTION_MS = 90_000;
@@ -34,6 +42,8 @@ export function toView(doc: InterviewDoc): InterviewView {
       question: turn.question,
       answer: turn.answer ?? null,
       feedback: hideFeedback ? null : (turn.feedback ?? null),
+      previousAttempts: (turn.previousAttempts ?? []).map((attempt) => ({ answer: attempt.answer, feedback: attempt.feedback })),
+      coachMessages: (turn.coachMessages ?? []).map(({ role, content, attempt }) => ({ role, content, attempt })),
       modelId: turn.modelId,
     })),
     report: doc.report,
@@ -251,12 +261,86 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
       return generateFeedback(doc, index, doc.setup.mode === "coach" ? onDelta : undefined);
     },
 
+    /**
+     * Coach mode: reopens the latest question for another attempt. The current answer and its feedback
+     * move to `previousAttempts`, and the question waits for an answer again.
+     */
+    async retry(candidateId: string, id: string): Promise<InterviewDoc> {
+      const doc = await loadInProgress(candidateId, id);
+      if (doc.setup.mode !== "coach") throw conflict("Retries are only available in coach mode");
+      const index = doc.turns.length - 1;
+      const last = doc.turns[index];
+      if (!last?.answer || !last.answeredAt) throw conflict("Answer the question before trying again");
+      if ((last.previousAttempts ?? []).length >= MAX_RETRIES) {
+        throw conflict(`You can retry a question up to ${MAX_RETRIES} times`);
+      }
+
+      const updated = await InterviewModel.findOneAndUpdate(
+        // Matching on answeredAt makes this a no-op for a second, racing request.
+        { _id: doc._id, status: "in_progress", turns: { $size: index + 1 }, [`turns.${index}.answeredAt`]: last.answeredAt },
+        {
+          $push: { [`turns.${index}.previousAttempts`]: { answer: last.answer, feedback: last.feedback, answeredAt: last.answeredAt } },
+          $set: { [`turns.${index}.answer`]: null, [`turns.${index}.answeredAt`]: null, [`turns.${index}.feedback`]: null },
+        },
+        { new: true }
+      ).lean<InterviewDoc>();
+      if (!updated) throw conflict("This question was already reopened");
+      return updated;
+    },
+
+    /** Coach mode: answers the candidate's question about the feedback on the latest answer, streaming the reply. */
+    async askCoach(candidateId: string, id: string, message: string, onDelta: OnDelta): Promise<InterviewDoc> {
+      const doc = await loadInProgress(candidateId, id);
+      if (doc.setup.mode !== "coach") throw conflict("The coach chat is only available in coach mode");
+      const index = doc.turns.length - 1;
+      const turn = doc.turns[index];
+      if (!turn || !isAsked(turn) || !turn.answer || !turn.feedback) {
+        throw conflict("The coach can answer questions once there's feedback on your answer");
+      }
+      const chat = turn.coachMessages ?? [];
+      if (chat.filter((entry) => entry.role === "candidate").length >= MAX_COACH_MESSAGES) {
+        throw conflict(`You can ask the coach up to ${MAX_COACH_MESSAGES} questions per interview question`);
+      }
+
+      const attempt = (turn.previousAttempts ?? []).length;
+      // Reserve: append the candidate's message only if nobody else did meanwhile (one reply at a time).
+      const path = `turns.${index}.coachMessages`;
+      // Interviews created before the coach chat existed have no array yet.
+      const unchanged = chat.length ? { [path]: { $size: chat.length } } : { $or: [{ [path]: { $size: 0 } }, { [path]: { $exists: false } }] };
+      const reserved = await InterviewModel.updateOne(
+        { _id: doc._id, status: "in_progress", turns: { $size: index + 1 }, ...unchanged },
+        { $push: { [`turns.${index}.coachMessages`]: { role: "candidate", content: message, attempt, createdAt: now() } } }
+      );
+      if (!reserved.modifiedCount) throw conflict("The coach is still replying to your last message");
+
+      const model = modelFor(doc);
+      try {
+        const reply = await collect(ai.stream(model, coachChatMessages(doc.setup, turn, chat, message)), onDelta);
+        if (!reply) throw new AiUnavailableError(model.id, `${model.label} returned an empty response. Try again, or switch models.`);
+        const updated = await InterviewModel.findOneAndUpdate(
+          { _id: doc._id, [`turns.${index}.coachMessages`]: { $size: chat.length + 1 } },
+          { $push: { [`turns.${index}.coachMessages`]: { role: "coach", content: reply, attempt, createdAt: now() } } },
+          { new: true }
+        ).lean<InterviewDoc>();
+        if (!updated) throw conflict("This interview changed while the coach was replying");
+        return updated;
+      } catch (error) {
+        // Remove the unanswered message so it doesn't count against the limit.
+        await InterviewModel.updateOne(
+          { _id: doc._id, [`turns.${index}.coachMessages`]: { $size: chat.length + 1 } },
+          { $pop: { [`turns.${index}.coachMessages`]: 1 } }
+        );
+        throw error;
+      }
+    },
+
     /** Ends the interview and writes the report, covering only the answered questions. */
     async end(candidateId: string, id: string): Promise<InterviewDoc> {
       const doc = await load(candidateId, id);
       if (doc.status === "completed") return doc;
 
-      const asked = doc.turns.filter(isAsked);
+      // A retry that was requested but never answered falls back to the attempt before it.
+      const asked = doc.turns.filter(isAsked).map(restorePendingRetry);
       const answered = asked.filter((turn) => turn.answer);
       if (!answered.length) throw conflict("Answer at least one question before ending the interview");
 
@@ -282,6 +366,13 @@ export function createInterviewService({ ai, registry, now = () => new Date() }:
 }
 
 export type InterviewService = ReturnType<typeof createInterviewService>;
+
+function restorePendingRetry<T extends TurnDoc>(turn: T): T {
+  const attempts = turn.previousAttempts ?? [];
+  const latest = attempts.at(-1);
+  if (turn.answer || !latest) return turn;
+  return { ...turn, answer: latest.answer, feedback: latest.feedback, answeredAt: latest.answeredAt, previousAttempts: attempts.slice(0, -1) };
+}
 
 /** Keeps one report entry per answered question, in order, and tidies scores. */
 export function normalizeReport(report: Report, answeredCount: number): Report {

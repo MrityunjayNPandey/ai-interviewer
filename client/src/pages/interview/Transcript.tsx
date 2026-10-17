@@ -3,7 +3,8 @@ import SchoolRounded from "@mui/icons-material/SchoolRounded";
 import SmartToyRounded from "@mui/icons-material/SmartToyRounded";
 import { Avatar, Box, Paper, Stack, Typography } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
+import type { TurnView } from "../../api/types";
 
 const blink = keyframes`50% { opacity: 0; }`;
 
@@ -28,17 +29,24 @@ function Bubble({
   avatar: ReactNode;
   name: string;
   align: "left" | "right";
-  tone: "interviewer" | "candidate" | "coach";
+  tone: "interviewer" | "candidate" | "coach" | "candidateToCoach";
   children: ReactNode;
 }) {
   const colors = {
     interviewer: { bgcolor: "background.paper", borderColor: "divider" },
     candidate: { bgcolor: "primary.main", color: "primary.contrastText", borderColor: "primary.main" },
     coach: { bgcolor: "action.hover", borderColor: "secondary.main" },
+    candidateToCoach: { bgcolor: "action.selected", borderColor: "divider" },
   }[tone];
   return (
     <Stack direction={align === "right" ? "row-reverse" : "row"} spacing={1.5} sx={{ alignItems: "flex-start" }}>
-      <Avatar sx={{ width: 36, height: 36, bgcolor: tone === "candidate" ? "primary.main" : tone === "coach" ? "secondary.main" : "grey.700" }}>
+      <Avatar
+        sx={{
+          width: 36,
+          height: 36,
+          bgcolor: tone === "coach" ? "secondary.main" : tone === "interviewer" ? "grey.700" : "primary.main",
+        }}
+      >
         {avatar}
       </Avatar>
       <Box sx={{ maxWidth: { xs: "85%", md: "75%" } }}>
@@ -59,9 +67,17 @@ export const QuestionBubble = ({ index, children }: { index: number; children: R
   </Bubble>
 );
 
-export const AnswerBubble = ({ children }: { children: ReactNode }) => (
-  <Bubble avatar={<PersonRounded fontSize="small" />} name="You" align="right" tone="candidate">
+export const AnswerBubble = ({ label = "You", children }: { label?: string; children: ReactNode }) => (
+  <Bubble avatar={<PersonRounded fontSize="small" />} name={label} align="right" tone="candidate">
     <Typography>{children}</Typography>
+  </Bubble>
+);
+
+export const CoachQuestionBubble = ({ children }: { children: ReactNode }) => (
+  <Bubble avatar={<PersonRounded fontSize="small" />} name="You · to the coach" align="right" tone="candidateToCoach">
+    <Typography variant="body2" sx={{ fontSize: "0.95rem" }}>
+      {children}
+    </Typography>
   </Bubble>
 );
 
@@ -72,3 +88,30 @@ export const FeedbackBubble = ({ children }: { children: ReactNode }) => (
     </Typography>
   </Bubble>
 );
+
+/** One question with every attempt at it, each attempt's feedback, and the coach chat that followed it. */
+export function TurnTranscript({ turn, showCoaching }: { turn: TurnView; showCoaching: boolean }) {
+  const attempts = [...turn.previousAttempts, ...(turn.answer ? [{ answer: turn.answer, feedback: turn.feedback }] : [])];
+  const numbered = turn.previousAttempts.length > 0;
+  return (
+    <Stack spacing={2}>
+      <QuestionBubble index={turn.index}>{turn.question}</QuestionBubble>
+      {attempts.map((attempt, index) => (
+        <Fragment key={index}>
+          <AnswerBubble label={numbered ? `You · Attempt ${index + 1}` : "You"}>{attempt.answer}</AnswerBubble>
+          {showCoaching && attempt.feedback && <FeedbackBubble>{attempt.feedback}</FeedbackBubble>}
+          {showCoaching &&
+            turn.coachMessages
+              .filter((message) => message.attempt === index)
+              .map((message, i) =>
+                message.role === "candidate" ? (
+                  <CoachQuestionBubble key={i}>{message.content}</CoachQuestionBubble>
+                ) : (
+                  <FeedbackBubble key={i}>{message.content}</FeedbackBubble>
+                )
+              )}
+        </Fragment>
+      ))}
+    </Stack>
+  );
+}

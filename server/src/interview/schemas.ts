@@ -66,6 +66,12 @@ export const MAX_RESUME_CHARS = 30_000;
 export const MAX_JOB_DESCRIPTION_CHARS = 15_000;
 export const MAX_ANSWER_CHARS = 6_000;
 
+/** Coach mode: how many times a question can be answered again after its feedback. */
+export const MAX_RETRIES = 2;
+/** Coach mode: how many messages the candidate can send the coach per question. */
+export const MAX_COACH_MESSAGES = 5;
+export const MAX_COACH_MESSAGE_CHARS = 1_000;
+
 export const setupSchema = z.object({
   resumeText: z.string().trim().min(1).max(MAX_RESUME_CHARS),
   jobDescription: z.string().trim().min(1).max(MAX_JOB_DESCRIPTION_CHARS),
@@ -103,12 +109,25 @@ export type Report = z.infer<typeof reportSchema>;
 
 export type InterviewStatus = "in_progress" | "completed";
 
+export type AttemptView = { answer: string; feedback: string | null };
+
+export type CoachMessageView = {
+  role: "candidate" | "coach";
+  content: string;
+  /** The attempt this message is about: 0 for the first answer, 1 for the first retry, and so on. */
+  attempt: number;
+};
+
 export type TurnView = {
   index: number;
   question: string;
+  /** The latest attempt. Null while waiting for an answer, including after a retry is requested. */
   answer: string | null;
   /** Null while not yet generated, and always null in mock mode until the interview is completed. */
   feedback: string | null;
+  /** Earlier attempts, oldest first (coach mode retries). */
+  previousAttempts: AttemptView[];
+  coachMessages: CoachMessageView[];
   modelId: string;
 };
 
