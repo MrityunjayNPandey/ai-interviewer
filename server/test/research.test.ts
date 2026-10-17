@@ -42,6 +42,26 @@ describe("POST /api/setup/research", () => {
     expect(ai.calls).toHaveLength(1);
   });
 
+  it("searches for the level at a company, such as Google L3", async () => {
+    const search = fakeSearch();
+    const { app } = testApp({ search });
+    await asCandidate(app).post("/api/setup/research", { title: "Software Engineer", company: "Google", seniority: "L3" }).expect(200);
+
+    expect(search.queries).toEqual([
+      "Google Software Engineer L3 interview questions",
+      "Google Software Engineer L3 interview process rounds",
+      "Google engineering culture values tech stack",
+    ]);
+  });
+
+  it("leaves the level out when there is none", async () => {
+    const search = fakeSearch();
+    const { app } = testApp({ search });
+    await asCandidate(app).post("/api/setup/research", { title: "Software Engineer", company: "Google", seniority: null }).expect(200);
+
+    expect(search.queries[0]).toBe("Google Software Engineer interview questions");
+  });
+
   it("researches the role in general when there is no company", async () => {
     const search = fakeSearch();
     const { app } = testApp({ search });

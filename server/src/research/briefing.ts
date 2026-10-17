@@ -42,9 +42,12 @@ export function canonicalUrl(url: string): string {
 export function searchQueries({ title, company, seniority }: BriefingSubject): string[] {
   const role = [seniority, title].filter(Boolean).join(" ");
   if (company) {
+    // Level matters for questions and process (e.g. Google L3 vs L5); culture doesn't vary by level.
+    const inTitle = seniority && title.toLowerCase().includes(seniority.toLowerCase());
+    const leveled = seniority && !inTitle ? `${title} ${seniority}` : title;
     return [
-      `${company} ${title} interview questions`,
-      `${company} ${title} interview process rounds`,
+      `${company} ${leveled} interview questions`,
+      `${company} ${leveled} interview process rounds`,
       `${company} engineering culture values tech stack`,
     ];
   }

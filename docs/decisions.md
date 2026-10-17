@@ -53,6 +53,7 @@ harder-to-reverse ones also have a decision record in [`adr/`](adr/). Terms such
 | No company | A **general briefing for the role**, labelled as such. | Still useful. |
 | Search provider | **Tavily**, summarised by our parse model. | Free without a card and returns clean source links. Gemini grounding has display rules, may train on inputs and excludes EEA/UK users; Groq's search models were shut down. |
 | Trust | Labelled "from public web sources, may be inaccurate"; web content treated as untrusted; links only from search results. | Forum content is hit-and-miss, and web pages can smuggle in instructions. |
+| Seniority in searches | With a company, the level is added to the question and process searches (e.g. "Google Software Engineer L3 interview questions"), not the culture search. | Levels like L3 vs L5 change what's asked; culture doesn't vary by level. |
 | Caching | **7 days per company + role + seniority, shared** across candidates. | Briefings hold nothing personal; saves search quota. |
 
 ## Security and abuse
@@ -80,5 +81,4 @@ harder-to-reverse ones also have a decision record in [`adr/`](adr/). Terms such
 
 ## Still open
 
-- Including the seniority (e.g. "L3") in the role briefing's search queries.
 - Step 6: bundle splitting, client tests, README rewrite, first deploy.
