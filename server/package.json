@@ -11,14 +11,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "express": "^5.1.0",
+    "fastify": "^5.12.7",
     "mongoose": "^8.19.0",
     "openai": "^4.103.0",
     "unpdf": "^1.9.0",
     "zod": "^3.25.30"
   },
   "devDependencies": {
-    "@types/express": "^5.0.2",
     "@types/node": "^22.15.21",
     "@types/supertest": "^6.0.3",
     "mongodb-memory-server": "^10.4.3",

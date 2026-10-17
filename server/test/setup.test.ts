@@ -1,6 +1,6 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { createApp } from "../src/app";
+import { createApp, toNodeHandler } from "../src/app";
 import { createModelRegistry } from "../src/ai/models";
 import { asCandidate, budget, fakeAi, match, profile, requirements, testApp, useDatabase } from "./helpers";
 
@@ -31,11 +31,11 @@ function pdfWith(text: string): Buffer {
 
 describe("GET /api/models", () => {
   it("lists only models whose provider has a key, marking the default", async () => {
-    const app = createApp({
+    const app = toNodeHandler(createApp({
       registry: createModelRegistry({ GROQ_API_KEY: "k", MISTRAL_API_KEY: "k" }),
       ai: fakeAi(),
       connect: async () => {},
-    });
+    }));
     const res = await request(app).get("/api/models").expect(200);
 
     const providers = new Set(res.body.models.map((model: { provider: string }) => model.provider));

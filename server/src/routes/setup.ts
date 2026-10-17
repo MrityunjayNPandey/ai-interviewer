@@ -1,4 +1,4 @@
-import express from "express";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
 import { AiUnavailableError, type AiClient } from "../ai/client";
@@ -24,24 +24,27 @@ export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 /** Resumes are a few pages; anything far longer isn't one, and costs CPU to parse. */
 const MAX_PDF_PAGES = 20;
 
-export function setupRouter({
-  ai,
-  registry,
-  budget,
-  search,
-  verifyHuman,
-  now = () => new Date(),
-}: {
+export type SetupRoutesOptions = {
   ai: AiClient;
   registry: ModelRegistry;
   budget: Budget;
   search: SearchClient | null;
   verifyHuman: VerifyHuman | null;
   now?: () => Date;
-}) {
-  const router = express.Router();
-  router.use(requireCandidate, pauseNewWork());
-  const meter = (req: express.Request) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
+};
+
+export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
+  app,
+  { ai, registry, budget, search, verifyHuman, now = () => new Date() }
+) => {
+  app.addHook("preHandler", requireCandidate);
+  app.addHook("preHandler", pauseNewWork());
+  const meter = (req: FastifyRequest) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
+
+  // Only this plugin accepts PDFs; the bytes are kept in memory and discarded after extraction.
+  app.addContentTypeParser("application/pdf", { parseAs: "buffer", bodyLimit: MAX_PDF_BYTES }, (_req, body, done) =>
+    done(null, body)
+  );
 
   const parseModel = () => {
     const model = registry.parseModel();
@@ -49,11 +52,8 @@ export function setupRouter({
     return model;
   };
 
-  // The PDF is read in memory and discarded; only the extracted text is returned.
-  router.post(
-    "/resume-text",
-    express.raw({ type: "application/pdf", limit: MAX_PDF_BYTES }),
-    async (req, res) => {
+  // Only the extracted text is returned.
+  app.post("/resume-text", async (req) => {
       if (!Buffer.isBuffer(req.body) || !req.body.length) {
         throw new HttpError(415, "UNSUPPORTED_FILE", "Upload your resume as a PDF file.");
       }
@@ -76,12 +76,11 @@ export function setupRouter({
           "We couldn't find any text in that PDF. It may be a scanned image. Paste your resume as text instead."
         );
       }
-      res.json({ text: cleaned.slice(0, MAX_RESUME_CHARS) });
-    }
-  );
+      return { text: cleaned.slice(0, MAX_RESUME_CHARS) };
+  });
 
   // Analyse is where a new setup starts, so it is the step that needs a human.
-  router.post("/parse", requireHuman(verifyHuman), async (req, res) => {
+  app.post("/parse", { preHandler: requireHuman(verifyHuman) }, async (req) => {
     const { resumeText, jobDescription } = z
       .object({
         resumeText: z.string().trim().min(1, "Add your resume").max(MAX_RESUME_CHARS),
@@ -95,10 +94,10 @@ export function setupRouter({
       ai.json(model, profileMessages(resumeText), candidateProfileSchema),
       ai.json(model, requirementsMessages(jobDescription), roleRequirementsSchema),
     ]);
-    res.json({ profile, requirements });
+    return { profile, requirements };
   });
 
-  router.post("/match", async (req, res) => {
+  app.post("/match", async (req) => {
     const { profile, requirements } = z
       .object({ profile: candidateProfileSchema, requirements: roleRequirementsSchema })
       .parse(req.body);
@@ -106,11 +105,11 @@ export function setupRouter({
     await meter(req).aiCalls(1);
 
     const match = await ai.json(model, matchMessages(profile, requirements), matchSchema);
-    res.json({ match });
+    return { match };
   });
 
   /** Researches the company and role on the web. Cached for a week per company + role + seniority. */
-  router.post("/research", async (req, res) => {
+  app.post("/research", async (req) => {
     const subject = z
       .object({
         title: z.string().trim().min(1, "Add the job title").max(160),
@@ -130,8 +129,7 @@ export function setupRouter({
         await usage.aiCalls(1);
       },
     });
-    res.json({ briefing, cached });
+    return { briefing, cached };
   });
 
-  return router;
-}
+};

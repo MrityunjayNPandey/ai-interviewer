@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import type { ZodType } from "zod";
-import { createApp, type AppOptions } from "../src/app";
+import { createApp, toNodeHandler, type AppOptions } from "../src/app";
 import { AiUnavailableError, type AiClient, type ChatMessage } from "../src/ai/client";
 import { createModelRegistry } from "../src/ai/models";
 import { DEFAULT_BUDGET, type Budget } from "../src/usage/meter";
@@ -104,7 +104,9 @@ export const registry = createModelRegistry({
 
 export function testApp(options: Omit<AppOptions, "ai"> & { ai?: FakeAi } = {}) {
   const ai = options.ai ?? fakeAi();
-  const app = createApp({ registry, connect: async () => {}, search: null, verifyHuman: null, budget: DEFAULT_BUDGET, ...options, ai });
+  const app = toNodeHandler(
+    createApp({ registry, connect: async () => {}, search: null, verifyHuman: null, budget: DEFAULT_BUDGET, ...options, ai })
+  );
   return { app, ai };
 }
 
@@ -146,7 +148,9 @@ export function setupFixture(overrides: Partial<Setup> = {}): Setup {
 }
 
 /** A supertest agent that sends a fixed candidate id. */
-export function asCandidate(app: ReturnType<typeof createApp>, id = randomUUID()) {
+export type TestApp = ReturnType<typeof toNodeHandler>;
+
+export function asCandidate(app: TestApp, id = randomUUID()) {
   const withId = (test: request.Test) => test.set("X-Candidate-Id", id);
   return {
     id,

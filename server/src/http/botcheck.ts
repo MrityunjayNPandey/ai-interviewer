@@ -1,5 +1,5 @@
-import type { RequestHandler } from "express";
-import { clientIp } from "./candidate";
+import type { FastifyRequest } from "fastify";
+import { clientIp, header } from "./candidate";
 import { HttpError } from "./errors";
 
 export const BOT_CHECK_HEADER = "x-turnstile-token";
@@ -33,14 +33,13 @@ export function createTurnstileVerifier(env: NodeJS.ProcessEnv = process.env): V
   };
 }
 
-/** Requires a valid, single-use bot-check token on the expensive entry points (starting work). */
-export function requireHuman(verify: VerifyHuman | null): RequestHandler {
-  return async (req, _res, next) => {
-    if (!verify) return next();
-    const token = req.get(BOT_CHECK_HEADER);
-    if (!token || token.length > 2048 || !(await verify(token, clientIp(req)))) {
+/** preHandler hook requiring a valid, single-use bot-check token on the expensive entry points (starting work). */
+export function requireHuman(verify: VerifyHuman | null) {
+  return async (request: FastifyRequest) => {
+    if (!verify) return;
+    const token = header(request, BOT_CHECK_HEADER);
+    if (!token || token.length > 2048 || !(await verify(token, clientIp(request)))) {
       throw new HttpError(403, "BOT_CHECK_FAILED", "We couldn't verify you're human. Please try again.");
     }
-    next();
   };
 }

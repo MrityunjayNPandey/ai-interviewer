@@ -1,14 +1,15 @@
-import express from "express";
+import Fastify, { type FastifyInstance } from "fastify";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createAiClient, type AiClient } from "./ai/client";
 import { createModelRegistry, type ModelRegistry } from "./ai/models";
 import { connectToDatabase } from "./db/mongo-client";
 import { createTurnstileVerifier, type VerifyHuman } from "./http/botcheck";
-import { errorHandler, HttpError } from "./http/errors";
+import { errorHandler } from "./http/errors";
 import { apiSecurityHeaders } from "./http/security";
 import type { ModelOption } from "./interview/schemas";
 import { createInterviewService } from "./interview/service";
-import { interviewsRouter } from "./routes/interviews";
-import { setupRouter } from "./routes/setup";
+import { interviewRoutes } from "./routes/interviews";
+import { setupRoutes } from "./routes/setup";
 import { createTavilyClient, type SearchClient } from "./research/search";
 import { budgetFromEnv, type Budget } from "./usage/meter";
 
@@ -25,7 +26,7 @@ export type AppOptions = {
   connect?: () => Promise<unknown>;
 };
 
-export function createApp(options: AppOptions = {}) {
+export function createApp(options: AppOptions = {}): FastifyInstance {
   const registry = options.registry ?? createModelRegistry();
   const ai = options.ai ?? createAiClient(registry);
   const budget = options.budget ?? budgetFromEnv();
@@ -34,43 +35,56 @@ export function createApp(options: AppOptions = {}) {
   const connect = options.connect ?? connectToDatabase;
   const service = createInterviewService({ ai, registry, now: options.now });
 
-  const app = express();
-  app.disable("x-powered-by");
   // No CORS: the site and the API share one origin, so other sites' pages can't call the API.
-  app.use(apiSecurityHeaders);
-  app.use(express.json({ limit: "200kb" }));
+  // trustProxy stays off: the client IP is read from Vercel's own header (see clientIp).
+  const app = Fastify({ bodyLimit: 200 * 1024 });
+  app.setErrorHandler(errorHandler);
+  app.setNotFoundHandler((_request, reply) => {
+    reply.code(404).send({ code: "NOT_FOUND", message: "Not found" });
+  });
+  app.addHook("onRequest", apiSecurityHeaders);
 
-  const api = express.Router();
-  api.get("/health", (_req, res) => {
-    res.json({ ok: true });
-  });
-  api.get("/models", (_req, res) => {
-    const defaultId = registry.defaultModel()?.id;
-    const models: ModelOption[] = registry.available().map((model) => {
-      const provider = registry.provider(model.provider);
-      return {
-        id: model.id,
-        label: model.label,
-        provider: provider.label,
-        note: model.note,
-        mayTrainOnInputs: provider.mayTrainOnInputs,
-        isDefault: model.id === defaultId,
-      };
-    });
-    res.json({ models });
-  });
+  app.register(
+    async (api) => {
+      api.get("/health", async () => ({ ok: true }));
+      api.get("/models", async () => {
+        const defaultId = registry.defaultModel()?.id;
+        const models: ModelOption[] = registry.available().map((model) => {
+          const provider = registry.provider(model.provider);
+          return {
+            id: model.id,
+            label: model.label,
+            provider: provider.label,
+            note: model.note,
+            mayTrainOnInputs: provider.mayTrainOnInputs,
+            isDefault: model.id === defaultId,
+          };
+        });
+        return { models };
+      });
 
-  api.use(async (_req, _res, next) => {
-    await connect();
-    next();
-  });
-  api.use("/setup", setupRouter({ ai, registry, budget, search, verifyHuman, now: options.now }));
-  api.use("/interviews", interviewsRouter({ service, budget, verifyHuman, now: options.now }));
-  api.use(() => {
-    throw new HttpError(404, "NOT_FOUND", "Not found");
-  });
+      // Everything below needs the database.
+      api.register(async (db) => {
+        db.addHook("onRequest", async () => {
+          await connect();
+        });
+        db.register(setupRoutes, { prefix: "/setup", ai, registry, budget, search, verifyHuman, now: options.now });
+        db.register(interviewRoutes, { prefix: "/interviews", service, budget, verifyHuman, now: options.now });
+      });
+    },
+    { prefix: "/api" }
+  );
 
-  app.use("/api", api);
-  app.use(errorHandler);
   return app;
 }
+
+/** Adapts the app to a plain Node request handler (Vercel functions, tests). */
+export function toNodeHandler(app: FastifyInstance) {
+  const ready = app.ready();
+  return async (request: IncomingMessage, response: ServerResponse) => {
+    await ready;
+    app.server.emit("request", request, response);
+  };
+}
+
+

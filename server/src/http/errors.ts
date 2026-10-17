@@ -1,4 +1,4 @@
-import type { ErrorRequestHandler } from "express";
+import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import { AiUnavailableError } from "../ai/client";
 import type { ApiError, ApiErrorCode } from "../interview/schemas";
@@ -40,12 +40,19 @@ export function toApiError(error: unknown): { status: number; body: ApiError } {
   return { status: 500, body: { code: "INTERNAL", message: "Something went wrong. Please try again." } };
 }
 
-export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
-  // Body-parser errors (malformed JSON, payload too large) carry their own status.
-  if (typeof error?.status === "number" && error.status < 500 && error.type) {
-    res.status(error.status).json({ code: "INVALID_REQUEST", message: error.message });
-    return;
+/** Fastify's own request errors (malformed JSON, body too large, unsupported content type). */
+const isFastifyClientError = (error: unknown): error is FastifyError =>
+  typeof error === "object" &&
+  error !== null &&
+  typeof (error as FastifyError).code === "string" &&
+  (error as FastifyError).code.startsWith("FST_") &&
+  typeof (error as FastifyError).statusCode === "number" &&
+  (error as FastifyError).statusCode! < 500;
+
+export function errorHandler(error: unknown, _request: FastifyRequest, reply: FastifyReply) {
+  if (isFastifyClientError(error)) {
+    return reply.code(error.statusCode!).send({ code: "INVALID_REQUEST", message: error.message } satisfies ApiError);
   }
   const { status, body } = toApiError(error);
-  res.status(status).json(body);
-};
+  return reply.code(status).send(body);
+}

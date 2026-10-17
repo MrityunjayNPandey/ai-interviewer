@@ -69,6 +69,7 @@ harder-to-reverse ones also have a decision record in [`adr/`](adr/). Terms such
 | Decision | Choice | Why |
 |---|---|---|
 | Hosting | **One Vercel project**, API under `/api`. Cloudflare and Render were considered and rejected for now. | Free, already working, reuses database connections, no cold starts ([ADR 0003](adr/0003-single-vercel-project.md)). |
+| Server framework | **Fastify** (replaced Express). Plugins scope hooks and parsers to where they apply: the PDF parser only on setup routes, the database connection only on routes that need it. | Product owner's choice. Fastify is faster and its encapsulated plugins fit the API's shape; request validation stays with zod, so the change was confined to the HTTP layer. |
 | Database | **MongoDB Atlas (free tier)**, one document per interview; old data discarded. | Mongoose was already in use, and the document shape fits ([ADR 0002](adr/0002-one-document-per-interview.md)). |
 | Repository | **pnpm workspace** (`client`, `server`) on **Node 22+**, with a committed lockfile. | One install and consistent versions everywhere. Node 20 reached end of life in April 2026. |
 | UI | Kept **MUI**, with a themed design, light/dark mode and a mobile-friendly layout. | Already in use; polish beats a library switch. |
