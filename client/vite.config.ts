@@ -10,4 +10,16 @@ export default defineConfig({
       "/api": `http://localhost:${process.env.API_PORT ?? 8080}`,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunks: they change far less often than the app's own code.
+        manualChunks: {
+          react: ["react", "react-dom", "react-dom/client", "react-router-dom"],
+          mui: ["@mui/material", "@emotion/react", "@emotion/styled"],
+          query: ["@tanstack/react-query"],
+        },
+      },
+    },
+  },
 });
