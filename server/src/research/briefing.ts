@@ -26,6 +26,19 @@ const normalize = (value: string | null) => (value ?? "").trim().toLowerCase().r
 export const cacheKey = (subject: BriefingSubject) =>
   [subject.company, subject.title, subject.seniority].map(normalize).join("|");
 
+const TRACKING_PARAM = /^(utm_|fbclid$|gclid$|ref$|ref_src$|si$|xstg$|feature$|source$)/;
+
+/** A URL without fragments and tracking parameters, so one page found twice counts once. */
+export function canonicalUrl(url: string): string {
+  const parsed = new URL(url);
+  parsed.hash = "";
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (TRACKING_PARAM.test(key)) parsed.searchParams.delete(key);
+  }
+  parsed.hostname = parsed.hostname.replace(/^(www|m)\./, "");
+  return parsed.toString().replace(/\/$/, "");
+}
+
 export function searchQueries({ title, company, seniority }: BriefingSubject): string[] {
   const role = [seniority, title].filter(Boolean).join(" ");
   if (company) {
@@ -133,7 +146,9 @@ export async function researchRole(
   const seen = new Set<string>();
   const sources = results
     .flat()
-    .filter((result) => /^https?:\/\//.test(result.url) && !seen.has(result.url) && seen.add(result.url))
+    .filter((result) => /^https?:\/\//.test(result.url))
+    .map((result) => ({ ...result, url: canonicalUrl(result.url) }))
+    .filter((result) => !seen.has(result.url) && seen.add(result.url))
     .slice(0, MAX_SOURCES)
     .map((result, index) => ({ ...result, id: index + 1, content: result.content.slice(0, MAX_SOURCE_CHARS) }));
 

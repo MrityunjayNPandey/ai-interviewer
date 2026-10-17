@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalUrl } from "../src/research/briefing";
 import { asCandidate, doneEvent, fakeSearch, setupFixture, testApp, useDatabase } from "./helpers";
 
 useDatabase();
@@ -97,5 +98,16 @@ describe("the interviewer and the briefing", () => {
     await candidate.stream(`/api/interviews/${created.body.interview.id}/questions`);
 
     expect(ai.calls.at(-1)!.messages[0]!.content).not.toContain("About a third");
+  });
+});
+
+describe("canonicalUrl", () => {
+  it("treats the same page with tracking parameters as one source", () => {
+    expect(canonicalUrl("https://www.youtube.com/watch?v=YojGTqNM6m8&xstg=CAMSBhUD")).toBe(canonicalUrl("https://youtube.com/watch?v=YojGTqNM6m8"));
+    expect(canonicalUrl("https://example.com/post/?utm_source=x#comments")).toBe("https://example.com/post");
+  });
+
+  it("keeps parameters that identify the page", () => {
+    expect(canonicalUrl("https://example.com/item?id=42")).toBe("https://example.com/item?id=42");
   });
 });
