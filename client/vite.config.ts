@@ -12,13 +12,15 @@ export default defineConfig({
     },
   },
   build: {
+    // The vendor chunk (React + MUI + React Query, ~220 kB gzipped) is expected to exceed the 500 kB default.
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        // Long-lived vendor chunks: they change far less often than the app's own code.
-        manualChunks: {
-          react: ["react", "react-dom", "react-dom/client", "react-router-dom"],
-          mui: ["@mui/material", "@emotion/react", "@emotion/styled"],
-          query: ["@tanstack/react-query"],
+        // One long-lived vendor chunk: it changes far less often than the app's own code. Splitting
+        // vendors further (react / mui / query) made chunks import each other in a cycle, and the
+        // react chunk then ran before React was defined, leaving a blank page.
+        manualChunks(id) {
+          if (id.includes("node_modules")) return "vendor";
         },
       },
     },
