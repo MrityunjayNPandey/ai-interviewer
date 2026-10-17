@@ -5,6 +5,7 @@ import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import { Box, Button, Card, CardContent, Grid, Stack, Typography } from "@mui/material";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import InterviewHistory from "./InterviewHistory";
 
 const steps: { icon: ReactNode; title: string; body: string }[] = [
   {
@@ -41,6 +42,8 @@ export default function HomePage() {
           Free, no sign-up. Your interviews stay tied to this browser.
         </Typography>
       </Box>
+
+      <InterviewHistory />
 
       <Grid container spacing={2}>
         {steps.map((step) => (
