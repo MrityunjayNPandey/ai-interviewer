@@ -81,4 +81,4 @@ harder-to-reverse ones also have a decision record in [`adr/`](adr/). Terms such
 
 ## Still open
 
-- Step 6: bundle splitting, client tests, README rewrite, first deploy.
+- **First deploy to Vercel.** Everything is ready (see the README's deployment section and the release checklist in [`security.md`](security.md)); it needs the product owner's Vercel and Cloudflare accounts.
