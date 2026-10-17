@@ -9,9 +9,9 @@ Practise a job interview with an AI interviewer tailored to your resume and the 
    - **Coach mode:** feedback after each answer, and you can ask the coach about it or try the question again.
    - **Mock mode:** like the real thing, with feedback only in the report.
 3. **Report.** An overall score, a score and note for each question, what a strong answer would have included, strengths, and what to work on next.
-4. **History.** Your interviews are kept in this browser: reopen a report, resume an interview, practise again with the same setup, or delete.
+4. **History.** Reopen a report, resume an interview, practise again with the same setup, or delete. Save your history with a **passkey** or a **recovery code** to open it in another browser or after clearing your browsing data.
 
-No sign-up: each browser gets an anonymous id. Everything runs on free AI tiers (Groq by default, optionally Mistral, Gemini and OpenRouter), protected by a bot check and usage budgets.
+No sign-up and no email: each browser gets an anonymous id. Everything runs on free AI tiers (Groq by default, optionally Mistral, Gemini and OpenRouter), protected by a bot check and usage budgets.
 
 ## Architecture
 

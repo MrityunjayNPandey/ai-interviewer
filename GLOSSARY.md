@@ -60,6 +60,30 @@ _Avoid_: GPT, engine, provider (a provider hosts models; it is not one)
 **Mode**:
 Whether feedback is shown after each answer (**Coach**) or held back until the report (**Mock**).
 
+### Keeping history
+
+**History**:
+A candidate's interviews, newest first. Kept against this browser's **candidate id** until it is saved.
+
+**Candidate Id**:
+The random, anonymous id the server gives each browser (in a cookie). Every interview belongs to one.
+_Avoid_: User id, account, session
+
+**Saving** (history):
+Linking the candidate id to a **passkey** or **recovery code**, so it can be restored in another browser.
+_Avoid_: Sign up, register, create an account
+
+**Passkey**:
+A device credential (Face ID, Touch ID, Windows Hello, a phone's screen lock) that restores a saved history. No email or password.
+
+**Recovery Code**:
+A one-time-shown code (`XXXX-XXXX-XXXX-XXXX-XXXX`) that restores a saved history; the fallback when a passkey isn't available.
+_Avoid_: Password, backup code
+
+**Restoring**:
+Switching a browser to a saved history with a passkey or recovery code. The browser's unsaved interviews move into it.
+_Avoid_: Log in, sign in (except "sign out of this browser")
+
 ### Interviewing
 
 **Interview**:

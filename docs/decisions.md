@@ -60,7 +60,8 @@ harder-to-reverse ones also have a decision record in [`adr/`](adr/). Terms such
 
 | Decision | Choice | Why |
 |---|---|---|
-| Identity | **Anonymous browser id, no accounts** (kept after the security review). | Zero friction; abuse is handled by the layers below ([ADR 0001](adr/0001-anonymous-candidates-no-accounts.md)). |
+| Identity | **Anonymous browser id, no accounts** (kept after the security review), issued as an HttpOnly cookie. | Zero friction; abuse is handled by the layers below ([ADR 0001](adr/0001-anonymous-candidates-no-accounts.md)). |
+| Keeping history | **Passkey or recovery code**, no email. Restoring moves the browser's unsaved interviews in; signing out needs a saved history. | Lets history follow the candidate without personal details ([ADR 0010](adr/0010-passkeys-and-recovery-codes-to-keep-history.md)). |
 | Bot check | **Cloudflare Turnstile** on Analyse, Start interview and Practise again. | The most effective single protection; invisible to most people. |
 | Budgets | Per AI call: **120/day per candidate, 200/day per IP, 20/minute**; **5 interviews/day** per candidate and per IP; global **800 AI calls and 30 web searches a day**. All configurable. | What costs money is AI calls; global caps keep the app under free quotas ([ADR 0007](adr/0007-usage-budgets-and-bot-check-instead-of-sign-in.md)). |
 | Other hardening | No CORS (one origin), strict CSP and security headers, unspoofable client IP on Vercel, input validation, PDF size and page caps, a maintenance switch. | See [`security.md`](security.md). |

@@ -33,7 +33,12 @@ All budgets are environment variables (see `server/.env.example`).
 - **Prompt injection.** Web pages are fenced as untrusted data, links in briefings only come from search
   results, and the AI has no tools. A candidate can only steer the AI within their own interview; the
   coach declines unrelated requests.
-- **Data isolation.** Every interview is scoped to its browser's random candidate id (a 122-bit UUID).
+- **Data isolation.** Every interview is scoped to its browser's random candidate id (a 122-bit UUID),
+  issued by the server as an `HttpOnly; SameSite=Strict` cookie on `/api` (`Secure` on Vercel), so page
+  scripts can't read it.
+- **Saved history.** Passkeys are verified with WebAuthn (single-use challenges, 5-minute expiry, bound to
+  the site's hostname). Recovery codes have 100 random bits, are stored only as a SHA-256 hash, and
+  restoring with one needs the bot check (`server/src/account/`).
 - **Dependencies.** `pnpm audit` reports no known vulnerabilities.
 
 ## Known limits
@@ -42,8 +47,11 @@ All budgets are environment variables (see `server/.env.example`).
   the daily global caps. They can't exceed them, so the cost is bounded at zero, but the app would be
   unavailable for the rest of that day. If that happens, the next step is requiring sign-in.
 - **Interviews are kept indefinitely**, including resume text. Candidates can delete their own.
-- **The browser id is the only key** to a candidate's interviews: clearing site data loses access, and
-  anyone with access to the browser can see them.
+- **The browser id is the key** to a candidate's interviews: until they save their history, clearing
+  site data loses access. Anyone with access to the browser, or to a candidate's passkey or recovery
+  code, can see them.
+- **Restoring on a shared computer** also moves in that browser's unsaved interviews, which may be a
+  previous person's.
 
 ## Release checklist
 
