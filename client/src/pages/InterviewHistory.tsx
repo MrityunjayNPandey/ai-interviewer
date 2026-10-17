@@ -15,9 +15,11 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { isHistorySaved, useAccount } from "../api/account";
 import { useDeleteInterview, usePractiseAgain } from "../api/mutations";
 import { useInterviews } from "../api/queries";
 import { DIFFICULTY_LABELS, INTERVIEW_TYPE_LABELS, type InterviewSummary } from "../api/types";
+import AccountDialog from "../components/AccountDialog";
 import ConfirmDeleteDialog from "../components/ConfirmDeleteDialog";
 import { ScoreChip } from "./report/ScoreVisuals";
 
@@ -89,6 +91,29 @@ function HistoryRow({ interview, onDelete }: { interview: InterviewSummary; onDe
   );
 }
 
+/** Until the history is saved, it lives in this browser only: say so, once there is something to lose. */
+function SaveHistoryNudge() {
+  const account = useAccount();
+  const [open, setOpen] = useState(false);
+  if (!account.data || isHistorySaved(account.data)) return null;
+  return (
+    <>
+      <Alert
+        severity="info"
+        sx={{ mb: 2 }}
+        action={
+          <Button color="inherit" size="small" onClick={() => setOpen(true)}>
+            Save history
+          </Button>
+        }
+      >
+        These interviews are kept in this browser only. Save them with a passkey or recovery code to keep them.
+      </Alert>
+      <AccountDialog open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 /** This browser's interviews, newest first. Renders nothing until there is at least one. */
 export default function InterviewHistory() {
   const interviews = useInterviews();
@@ -116,6 +141,7 @@ export default function InterviewHistory() {
           New interview
         </Button>
       </Stack>
+      <SaveHistoryNudge />
       <Stack spacing={1.5}>
         {interviews.data.map((interview) => (
           <HistoryRow key={interview.id} interview={interview} onDelete={() => setDeleting(interview.id)} />

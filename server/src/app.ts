@@ -6,6 +6,7 @@ import { createAiClient, type AiClient } from "./ai/client";
 import { createModelRegistry, type ModelRegistry } from "./ai/models";
 import { connectToDatabase } from "./db/mongo-client";
 import { createTurnstileVerifier, type VerifyHuman } from "./http/botcheck";
+import { requireCandidate } from "./http/candidate";
 import { errorHandler } from "./http/errors";
 import { apiSecurityHeaders } from "./http/security";
 import type { ModelOption } from "./interview/schemas";
@@ -51,6 +52,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
 
   app.register(
     async (api) => {
+      // Every API reply identifies the browser, so a new (or pre-cookie) browser gets its cookie from the first call.
+      api.addHook("preHandler", requireCandidate);
       api.get("/health", async () => ({ ok: true }));
       api.get("/models", async () => {
         const defaultId = registry.defaultModel()?.id;

@@ -1,8 +1,11 @@
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
+import ManageHistoryOutlined from "@mui/icons-material/ManageHistoryOutlined";
 import LightModeOutlined from "@mui/icons-material/LightModeOutlined";
 import { AppBar, Box, Container, IconButton, Link, Toolbar, Tooltip, Typography } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
+import { useState } from "react";
 import { Outlet, Link as RouterLink } from "react-router-dom";
+import AccountDialog from "./AccountDialog";
 
 function ThemeToggle() {
   const { mode, systemMode, setMode } = useColorScheme();
@@ -15,6 +18,20 @@ function ThemeToggle() {
         {current === "dark" ? <LightModeOutlined /> : <DarkModeOutlined />}
       </IconButton>
     </Tooltip>
+  );
+}
+
+function HistoryButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Tooltip title="Save or restore your history">
+        <IconButton onClick={() => setOpen(true)} aria-label="Save or restore your history">
+          <ManageHistoryOutlined />
+        </IconButton>
+      </Tooltip>
+      <AccountDialog open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
@@ -41,6 +58,7 @@ export default function Layout() {
                 AI Interviewer
               </Typography>
             </Link>
+            <HistoryButton />
             <ThemeToggle />
           </Toolbar>
         </Container>

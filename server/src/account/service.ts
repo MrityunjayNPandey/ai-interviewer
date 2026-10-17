@@ -9,12 +9,11 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import { conflict, HttpError } from "../http/errors";
 import { InterviewModel } from "../interview/model";
+import type { AccountStatus } from "./schemas";
 import { CandidateModel, CHALLENGE_TTL_MS, ChallengeModel, type CandidateDoc, type ChallengePurpose } from "./model";
 
 /** Who the passkeys belong to: the site's hostname, and the exact origin the browser reports. */
 export type RelyingParty = { id: string; origin: string };
-
-export type AccountStatus = { passkeys: number; hasRecoveryCode: boolean };
 
 const RP_NAME = "AI Interviewer";
 

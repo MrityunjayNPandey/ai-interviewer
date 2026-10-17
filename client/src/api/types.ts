@@ -22,6 +22,8 @@ export type {
   TurnView,
 } from "../../../server/src/interview/schemas";
 
+export type { AccountStatus } from "../../../server/src/account/schemas";
+
 import type { Difficulty, InterviewType, Mode } from "../../../server/src/interview/schemas";
 
 // Mirrors of the server's limits, for form controls.

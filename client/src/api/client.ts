@@ -1,25 +1,22 @@
 import type { ApiErrorBody, ApiErrorCode, InterviewView, StreamEvent } from "./types";
 
-const CANDIDATE_KEY = "ai-interviewer.candidateId";
+// The server identifies this browser with an HttpOnly cookie. Browsers from before that kept the id
+// in localStorage: it is sent until the server has answered (and set the cookie), then forgotten.
+const LEGACY_CANDIDATE_KEY = "ai-interviewer.candidateId";
 
-let cachedCandidateId: string | null = null;
-
-/** The anonymous id for this browser, created on first use. */
-export function getCandidateId(): string {
-  if (cachedCandidateId) return cachedCandidateId;
-  let id: string | null = null;
+function storage(): Storage | null {
   try {
-    id = localStorage.getItem(CANDIDATE_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(CANDIDATE_KEY, id);
-    }
+    return localStorage;
   } catch {
-    // Storage blocked (e.g. private mode): fall back to an id for this tab only.
-    id ??= crypto.randomUUID();
+    return null; // blocked, e.g. in some private modes
   }
-  cachedCandidateId = id;
-  return id;
+}
+
+let legacyCandidateId: string | null = storage()?.getItem(LEGACY_CANDIDATE_KEY) ?? null;
+
+function forgetLegacyCandidateId() {
+  legacyCandidateId = null;
+  storage()?.removeItem(LEGACY_CANDIDATE_KEY);
 }
 
 export class ApiError extends Error {
@@ -47,11 +44,12 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   try {
     response = await fetch(`/api${path}`, {
       ...init,
-      headers: { "X-Candidate-Id": getCandidateId(), ...init.headers },
+      headers: { ...(legacyCandidateId ? { "X-Candidate-Id": legacyCandidateId } : {}), ...init.headers },
     });
   } catch {
     throw new ApiError(0, "INTERNAL", "Couldn't reach the server. Check your connection and try again.");
   }
+  if (legacyCandidateId && response.ok) forgetLegacyCandidateId(); // the server now has it as a cookie
   if (!response.ok) throw await errorFrom(response);
   return response;
 }
@@ -67,7 +65,8 @@ export const api = {
     return (await send(path)).json() as Promise<T>;
   },
   async post<T>(path: string, body: unknown = {}, headers: Record<string, string> = {}): Promise<T> {
-    return (await send(path, json(body, headers))).json() as Promise<T>;
+    const response = await send(path, json(body, headers));
+    return (response.status === 204 ? undefined : response.json()) as Promise<T>;
   },
   async put<T>(path: string, body: unknown): Promise<T> {
     return (await send(path, { ...json(body), method: "PUT" })).json() as Promise<T>;

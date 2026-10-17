@@ -4,6 +4,7 @@ import type { InterviewSummary, InterviewView, ModelOption } from "./types";
 
 export const queryKeys = {
   models: ["models"] as const,
+  account: ["account"] as const,
   interviews: ["interviews"] as const,
   interview: (id: string) => ["interviews", id] as const,
 };

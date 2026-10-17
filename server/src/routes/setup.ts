@@ -4,7 +4,7 @@ import { z } from "zod";
 import { AiUnavailableError, type AiClient } from "../ai/client";
 import type { ModelRegistry } from "../ai/models";
 import { requireHuman, type VerifyHuman } from "../http/botcheck";
-import { candidateId, clientIp, requireCandidate } from "../http/candidate";
+import { candidateId, clientIp } from "../http/candidate";
 import { pauseNewWork } from "../http/security";
 import { HttpError } from "../http/errors";
 import { matchMessages, profileMessages, requirementsMessages } from "../interview/prompts";
@@ -37,7 +37,6 @@ export const setupRoutes: FastifyPluginAsync<SetupRoutesOptions> = async (
   app,
   { ai, registry, budget, search, verifyHuman, now = () => new Date() }
 ) => {
-  app.addHook("preHandler", requireCandidate);
   app.addHook("preHandler", pauseNewWork());
   const meter = (req: FastifyRequest) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
 

@@ -1,19 +1,15 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { z } from "zod";
+import { credentialSchema, recoverSchema } from "../account/schemas";
 import type { AccountService, RelyingParty } from "../account/service";
 import { requireHuman, type VerifyHuman } from "../http/botcheck";
-import { candidateId, clearCandidateCookie, header, requireCandidate, setCandidateCookie } from "../http/candidate";
+import { candidateId, clearCandidateCookie, header, setCandidateCookie } from "../http/candidate";
 import { HttpError } from "../http/errors";
 
 export type AccountRoutesOptions = {
   account: AccountService;
   verifyHuman: VerifyHuman | null;
 };
-
-/** The browser's WebAuthn response, checked in full by the verifier; here only its shape and id. */
-const credentialSchema = z.object({ id: z.string().min(1).max(1024), response: z.object({}).passthrough() }).passthrough();
-const recoverSchema = z.object({ code: z.string().min(1).max(64) });
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
@@ -27,8 +23,6 @@ function relyingParty(request: FastifyRequest): RelyingParty {
 }
 
 export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (app, { account, verifyHuman }) => {
-  app.addHook("preHandler", requireCandidate);
-
   app.get("/", async (req) => account.status(candidateId(req)));
 
   app.post("/passkeys/options", async (req) => account.passkeyRegistrationOptions(candidateId(req), relyingParty(req)));

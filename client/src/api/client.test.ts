@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { jsonResponse, mockFetch, streamResponse } from "../test/render";
-import { api, ApiError, getCandidateId } from "./client";
+import { api, ApiError } from "./client";
 
 const done = { type: "done", interview: { id: "abc" } };
 
@@ -37,15 +37,28 @@ describe("api.stream", () => {
 });
 
 describe("requests", () => {
-  it("send the same anonymous candidate id every time", async () => {
+  it("send the id an older version kept in localStorage until the server has it, then forget it", async () => {
+    const legacyId = "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b";
+    localStorage.setItem("ai-interviewer.candidateId", legacyId);
+    vi.resetModules(); // the stored id is read when the module loads
+    const { api: fresh } = await import("./client");
+    let fail = true;
+    const fetch = mockFetch(() => (fail ? jsonResponse({ code: "INTERNAL", message: "Down" }, 500) : jsonResponse({ interviews: [] })));
+
+    await expect(fresh.get("/interviews")).rejects.toThrow("Down");
+    fail = false;
+    await fresh.get("/interviews");
+    await fresh.get("/interviews");
+
+    const sent = fetch.mock.calls.map(([, init]) => (init?.headers as Record<string, string>)["X-Candidate-Id"]);
+    expect(sent).toEqual([legacyId, legacyId, undefined]);
+    expect(localStorage.getItem("ai-interviewer.candidateId")).toBeNull();
+  });
+
+  it("send no id of their own: the server's cookie identifies the browser", async () => {
     const fetch = mockFetch(() => jsonResponse({ interviews: [] }));
     await api.get("/interviews");
-    await api.get("/interviews");
-
-    const ids = fetch.mock.calls.map(([, init]) => (init?.headers as Record<string, string>)["X-Candidate-Id"]);
-    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
-    expect(ids[1]).toBe(ids[0]);
-    expect(getCandidateId()).toBe(ids[0]);
+    expect((fetch.mock.calls[0]![1]?.headers as Record<string, string>)["X-Candidate-Id"]).toBeUndefined();
   });
 
   it("surface the server's error code and message", async () => {

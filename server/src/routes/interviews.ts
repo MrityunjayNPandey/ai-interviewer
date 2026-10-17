@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireHuman, type VerifyHuman } from "../http/botcheck";
-import { candidateId, clientIp, requireCandidate } from "../http/candidate";
+import { candidateId, clientIp } from "../http/candidate";
 import { streamNdjson } from "../http/ndjson";
 import { pauseNewWork } from "../http/security";
 import { MAX_ANSWER_CHARS, MAX_COACH_MESSAGE_CHARS, setupSchema } from "../interview/schemas";
@@ -21,7 +21,6 @@ export const interviewRoutes: FastifyPluginAsync<InterviewRoutesOptions> = async
   app,
   { service, budget, verifyHuman, now = () => new Date() }
 ) => {
-  app.addHook("preHandler", requireCandidate);
   const meter = (req: FastifyRequest) => createMeter(budget, { candidateId: candidateId(req), ip: clientIp(req) }, now());
   const charge = (req: FastifyRequest) => () => meter(req).aiCalls(1);
   /** New work: paused in maintenance, and only for humans. */
